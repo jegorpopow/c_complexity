@@ -207,9 +207,7 @@ class BlockPattern(Pattern):
     def match(self, tree):
         if tree.kind != clang.cindex.CursorKind.COMPOUND_STMT:
             return None
-        print("matching block....")
         matches = [self.atom.match(i) for i in tree.get_children()]
-        print(f"chidren matches = {matches}")
         if any(result is None for result in matches):
             return None
         return matches
@@ -280,8 +278,6 @@ class UnopPattern(Pattern):
         operand = next(tree.get_children())
         prefix, operator = get_unop_spelling(tree)
 
-        # print("found operator:", f"{operator}(...)" if prefix else f"(...){operator}")
-
         val = self.operand.match(operand)
         if val == None:
             return
@@ -343,8 +339,6 @@ class CounterForPattern(Pattern):
         if tree.kind != clang.cindex.CursorKind.FOR_STMT:
             return None
 
-        print("for statement found!")
-
         assignment_p = filter_p(
             lambda expr: expr.operator == "=", binop_of_p(expr_var_p, silly_expr_p)
         )
@@ -367,17 +361,14 @@ class CounterForPattern(Pattern):
         pre, condition, iter, body = [i for i in tree.get_children()]
 
         condition: SillyBinop = silly_expr_p.match(condition)
-        print(f"condition = {str(condition)}")
         if condition is None:
             return None
 
         init: SillyBinop = (assignment_p | value_initialization_p).match(pre)
-        print(f"init = {str(init)}")
         if init is None:
             return None
 
         mut: SillyUnop = mutation_p.match(iter)
-        print(f"mut  = {str(mut)}")
         if mut == None:
             return None
 
@@ -388,12 +379,9 @@ class CounterForPattern(Pattern):
         counter_name = init.lhs.name
         counter_lower_bound = init.rhs
 
-        print(condition.operator, mut.operator)
         # TODO variate cycle types
         if condition.operator not in ["<", "<="] or mut.operator != "++":
             return None
-
-        print("here")
 
         counter_upper_bound = condition.rhs
 
