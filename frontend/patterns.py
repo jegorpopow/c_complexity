@@ -1,6 +1,6 @@
 import clang.cindex
 import sys
-from typing import Any
+from typing import Any, List
 from dataclasses import dataclass
 
 # [CursorKind.UNEXPOSED_DECL, CursorKind.STRUCT_DECL, CursorKind.UNION_DECL, CursorKind.CLASS_DECL, CursorKind.ENUM_DECL, CursorKind.FIELD_DECL, CursorKind.ENUM_CONSTANT_DECL, CursorKind.FUNCTION_DECL, CursorKind.VAR_DECL, CursorKind.PARM_DECL, CursorKind.OBJC_INTERFACE_DECL, CursorKind.OBJC_CATEGORY_DECL, CursorKind.OBJC_PROTOCOL_DECL, CursorKind.OBJC_PROPERTY_DECL, CursorKind.OBJC_IVAR_DECL, CursorKind.OBJC_INSTANCE_METHOD_DECL, CursorKind.OBJC_CLASS_METHOD_DECL, CursorKind.OBJC_IMPLEMENTATION_DECL, CursorKind.OBJC_CATEGORY_IMPL_DECL, CursorKind.TYPEDEF_DECL, CursorKind.CXX_METHOD, CursorKind.NAMESPACE, CursorKind.LINKAGE_SPEC, CursorKind.CONSTRUCTOR, CursorKind.DESTRUCTOR, CursorKind.CONVERSION_FUNCTION, CursorKind.TEMPLATE_TYPE_PARAMETER, CursorKind.TEMPLATE_NON_TYPE_PARAMETER, CursorKind.TEMPLATE_TEMPLATE_PARAMETER, CursorKind.FUNCTION_TEMPLATE, CursorKind.CLASS_TEMPLATE, CursorKind.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION, CursorKind.NAMESPACE_ALIAS, CursorKind.USING_DIRECTIVE, CursorKind.USING_DECLARATION, CursorKind.TYPE_ALIAS_DECL, CursorKind.OBJC_SYNTHESIZE_DECL, CursorKind.OBJC_DYNAMIC_DECL, CursorKind.CXX_ACCESS_SPEC_DECL, CursorKind.OBJC_SUPER_CLASS_REF, CursorKind.OBJC_PROTOCOL_REF, CursorKind.OBJC_CLASS_REF, CursorKind.TYPE_REF, CursorKind.CXX_BASE_SPECIFIER, CursorKind.TEMPLATE_REF, CursorKind.NAMESPACE_REF, CursorKind.MEMBER_REF, CursorKind.LABEL_REF, CursorKind.OVERLOADED_DECL_REF, CursorKind.VARIABLE_REF, CursorKind.INVALID_FILE, CursorKind.NO_DECL_FOUND, CursorKind.NOT_IMPLEMENTED, CursorKind.INVALID_CODE, CursorKind.UNEXPOSED_EXPR, CursorKind.DECL_REF_EXPR, CursorKind.MEMBER_REF_EXPR, CursorKind.CALL_EXPR, CursorKind.OBJC_MESSAGE_EXPR, CursorKind.BLOCK_EXPR, CursorKind.INTEGER_LITERAL, CursorKind.FLOATING_LITERAL, CursorKind.IMAGINARY_LITERAL, CursorKind.STRING_LITERAL, CursorKind.CHARACTER_LITERAL, CursorKind.PAREN_EXPR, CursorKind.UNARY_OPERATOR, CursorKind.ARRAY_SUBSCRIPT_EXPR, CursorKind.BINARY_OPERATOR, CursorKind.COMPOUND_ASSIGNMENT_OPERATOR, CursorKind.CONDITIONAL_OPERATOR, CursorKind.CSTYLE_CAST_EXPR, CursorKind.COMPOUND_LITERAL_EXPR, CursorKind.INIT_LIST_EXPR, CursorKind.ADDR_LABEL_EXPR, CursorKind.StmtExpr, CursorKind.GENERIC_SELECTION_EXPR, CursorKind.GNU_NULL_EXPR, CursorKind.CXX_STATIC_CAST_EXPR, CursorKind.CXX_DYNAMIC_CAST_EXPR, CursorKind.CXX_REINTERPRET_CAST_EXPR, CursorKind.CXX_CONST_CAST_EXPR, CursorKind.CXX_FUNCTIONAL_CAST_EXPR, CursorKind.CXX_TYPEID_EXPR, CursorKind.CXX_BOOL_LITERAL_EXPR, CursorKind.CXX_NULL_PTR_LITERAL_EXPR, CursorKind.CXX_THIS_EXPR, CursorKind.CXX_THROW_EXPR, CursorKind.CXX_NEW_EXPR, CursorKind.CXX_DELETE_EXPR, CursorKind.CXX_UNARY_EXPR, CursorKind.OBJC_STRING_LITERAL, CursorKind.OBJC_ENCODE_EXPR, CursorKind.OBJC_SELECTOR_EXPR, CursorKind.OBJC_PROTOCOL_EXPR, CursorKind.OBJC_BRIDGE_CAST_EXPR, CursorKind.PACK_EXPANSION_EXPR, CursorKind.SIZE_OF_PACK_EXPR, CursorKind.LAMBDA_EXPR, CursorKind.OBJ_BOOL_LITERAL_EXPR, CursorKind.OBJ_SELF_EXPR, CursorKind.OMP_ARRAY_SECTION_EXPR, CursorKind.OBJC_AVAILABILITY_CHECK_EXPR, CursorKind.UNEXPOSED_STMT, CursorKind.LABEL_STMT, CursorKind.COMPOUND_STMT, CursorKind.CASE_STMT, CursorKind.DEFAULT_STMT, CursorKind.IF_STMT, CursorKind.SWITCH_STMT, CursorKind.WHILE_STMT, CursorKind.DO_STMT, CursorKind.FOR_STMT, CursorKind.GOTO_STMT, CursorKind.INDIRECT_GOTO_STMT, CursorKind.CONTINUE_STMT, CursorKind.BREAK_STMT, CursorKind.RETURN_STMT, CursorKind.ASM_STMT, CursorKind.OBJC_AT_TRY_STMT, CursorKind.OBJC_AT_CATCH_STMT, CursorKind.OBJC_AT_FINALLY_STMT, CursorKind.OBJC_AT_THROW_STMT, CursorKind.OBJC_AT_SYNCHRONIZED_STMT, CursorKind.OBJC_AUTORELEASE_POOL_STMT, CursorKind.OBJC_FOR_COLLECTION_STMT, CursorKind.CXX_CATCH_STMT, CursorKind.CXX_TRY_STMT, CursorKind.CXX_FOR_RANGE_STMT, CursorKind.SEH_TRY_STMT, CursorKind.SEH_EXCEPT_STMT, CursorKind.SEH_FINALLY_STMT, CursorKind.MS_ASM_STMT, CursorKind.NULL_STMT, CursorKind.DECL_STMT, CursorKind.OMP_PARALLEL_DIRECTIVE, CursorKind.OMP_SIMD_DIRECTIVE, CursorKind.OMP_FOR_DIRECTIVE, CursorKind.OMP_SECTIONS_DIRECTIVE, CursorKind.OMP_SECTION_DIRECTIVE, CursorKind.OMP_SINGLE_DIRECTIVE, CursorKind.OMP_PARALLEL_FOR_DIRECTIVE, CursorKind.OMP_PARALLEL_SECTIONS_DIRECTIVE, CursorKind.OMP_TASK_DIRECTIVE, CursorKind.OMP_MASTER_DIRECTIVE, CursorKind.OMP_CRITICAL_DIRECTIVE, CursorKind.OMP_TASKYIELD_DIRECTIVE, CursorKind.OMP_BARRIER_DIRECTIVE, CursorKind.OMP_TASKWAIT_DIRECTIVE, CursorKind.OMP_FLUSH_DIRECTIVE, CursorKind.SEH_LEAVE_STMT, CursorKind.OMP_ORDERED_DIRECTIVE, CursorKind.OMP_ATOMIC_DIRECTIVE, CursorKind.OMP_FOR_SIMD_DIRECTIVE, CursorKind.OMP_PARALLELFORSIMD_DIRECTIVE, CursorKind.OMP_TARGET_DIRECTIVE, CursorKind.OMP_TEAMS_DIRECTIVE, CursorKind.OMP_TASKGROUP_DIRECTIVE, CursorKind.OMP_CANCELLATION_POINT_DIRECTIVE, CursorKind.OMP_CANCEL_DIRECTIVE, CursorKind.OMP_TARGET_DATA_DIRECTIVE, CursorKind.OMP_TASK_LOOP_DIRECTIVE, CursorKind.OMP_TASK_LOOP_SIMD_DIRECTIVE, CursorKind.OMP_DISTRIBUTE_DIRECTIVE, CursorKind.OMP_TARGET_ENTER_DATA_DIRECTIVE, CursorKind.OMP_TARGET_EXIT_DATA_DIRECTIVE, CursorKind.OMP_TARGET_PARALLEL_DIRECTIVE, CursorKind.OMP_TARGET_PARALLELFOR_DIRECTIVE, CursorKind.OMP_TARGET_UPDATE_DIRECTIVE, CursorKind.OMP_DISTRIBUTE_PARALLELFOR_DIRECTIVE, CursorKind.OMP_DISTRIBUTE_PARALLEL_FOR_SIMD_DIRECTIVE, CursorKind.OMP_DISTRIBUTE_SIMD_DIRECTIVE, CursorKind.OMP_TARGET_PARALLEL_FOR_SIMD_DIRECTIVE, CursorKind.OMP_TARGET_SIMD_DIRECTIVE, CursorKind.OMP_TEAMS_DISTRIBUTE_DIRECTIVE, CursorKind.TRANSLATION_UNIT, CursorKind.UNEXPOSED_ATTR, CursorKind.IB_ACTION_ATTR, CursorKind.IB_OUTLET_ATTR, CursorKind.IB_OUTLET_COLLECTION_ATTR, CursorKind.CXX_FINAL_ATTR, CursorKind.CXX_OVERRIDE_ATTR, CursorKind.ANNOTATE_ATTR, CursorKind.ASM_LABEL_ATTR, CursorKind.PACKED_ATTR, CursorKind.PURE_ATTR, CursorKind.CONST_ATTR, CursorKind.NODUPLICATE_ATTR, CursorKind.CUDACONSTANT_ATTR, CursorKind.CUDADEVICE_ATTR, CursorKind.CUDAGLOBAL_ATTR, CursorKind.CUDAHOST_ATTR, CursorKind.CUDASHARED_ATTR, CursorKind.VISIBILITY_ATTR, CursorKind.DLLEXPORT_ATTR, CursorKind.DLLIMPORT_ATTR, CursorKind.CONVERGENT_ATTR, CursorKind.WARN_UNUSED_ATTR, CursorKind.WARN_UNUSED_RESULT_ATTR, CursorKind.ALIGNED_ATTR, CursorKind.PREPROCESSING_DIRECTIVE, CursorKind.MACRO_DEFINITION, CursorKind.MACRO_INSTANTIATION, CursorKind.INCLUSION_DIRECTIVE, CursorKind.MODULE_IMPORT_DECL, CursorKind.TYPE_ALIAS_TEMPLATE_DECL, CursorKind.STATIC_ASSERT, CursorKind.FRIEND_DECL, CursorKind.OVERLOAD_CANDIDATE]
@@ -62,12 +62,40 @@ class SillyCounterFor:
     counter_increase: Any
     body: Any
 
+    def pretty(self) -> str:
+        return (
+            f'(SCounterFor "{self.counter}" "{self.final.name}" {self.body.pretty()})'
+        )
+
 
 @dataclass
 class SillyIf:
     condition: Any
     then_branch: Any
     else_branch: Any | None
+
+    def pretty(self) -> str:
+        left = self.then_branch.pretty()
+        right = "SSkip" if self.else_branch is None else self.else_branch.pretty()
+
+        return f"(SIf {left} {right})"
+
+
+@dataclass
+class SillyExpr:
+    pass
+
+    def pretty(self) -> str:
+        return "SExpr"
+
+
+@dataclass
+class SillyBlock:
+    children: List[Any]
+
+    def pretty(self) -> str:
+        children = [c.pretty() for c in self.children]
+        return f"(SBlock [{', '.join(children)}])"
 
 
 # first-class pattern, .match(tree) returns None on failure
@@ -179,7 +207,9 @@ class BlockPattern(Pattern):
     def match(self, tree):
         if tree.kind != clang.cindex.CursorKind.COMPOUND_STMT:
             return None
+        print("matching block....")
         matches = [self.atom.match(i) for i in tree.get_children()]
+        print(f"chidren matches = {matches}")
         if any(result is None for result in matches):
             return None
         return matches
@@ -302,6 +332,9 @@ class IfPattern(Pattern):
         return SillyIf(cond, then_branch, else_branch)
 
 
+silly_if_p = lambda branch: IfPattern(wildcard_p, branch, branch, else_obligatory=False)
+
+
 class CounterForPattern(Pattern):
     def __init__(self, body):
         self.body = body
@@ -391,20 +424,20 @@ def find_first(pattern: Pattern, root):
     return None
 
 
-def traverse_function(function):
-    children = [i for i in function.get_children()]
-    assert len(children) == 2
-    body = children[1]
-    print(body.kind)
-    statements = [i for i in body.get_children()]
-    for stmt in statements:
-        print(
-            stmt.kind,
-            stmt.kind.is_expression(),
-            stmt.kind.is_declaration(),
-            stmt.kind.is_statement(),
-        )
-    print(sum(1 for _ in body.get_children()))
+# def traverse_function(function):
+#     children = [i for i in function.get_children()]
+#     assert len(children) == 2
+#     body = children[1]
+#     print(body.kind)
+#     statements = [i for i in body.get_children()]
+#     for stmt in statements:
+#         print(
+#             stmt.kind,
+#             stmt.kind.is_expression(),
+#             stmt.kind.is_declaration(),
+#             stmt.kind.is_statement(),
+#         )
+#     print(sum(1 for _ in body.get_children()))
 
 
 def print_kinds(root, decay=0):
@@ -412,6 +445,21 @@ def print_kinds(root, decay=0):
     for child in root.get_children():
         print_kinds(child, decay + 1)
 
+
+silly_ast_pattern = fix_p(
+    lambda silly_ast: map_p(lambda c: SillyBlock(c), block_of_p(silly_ast))
+    | silly_if_p(silly_ast)
+    | map_p(lambda _: SillyExpr(), expr_p)
+    | map_p(
+        lambda _: SillyExpr(),
+        satisfy_p(lambda tree: tree.kind == clang.cindex.CursorKind.DECL_STMT),
+    )
+    | map_p(
+        lambda _: SillyExpr(),
+        satisfy_p(lambda tree: tree.kind == clang.cindex.CursorKind.RETURN_STMT),
+    )
+    | CounterForPattern(silly_ast)
+)
 
 if __name__ == "__main__":
     assert len(sys.argv) >= 3
@@ -423,27 +471,32 @@ if __name__ == "__main__":
     root = translation_unit.cursor
 
     pretty_function = find_first(named_function_p(function_name), root)
+    function = pretty_function
 
-    function = find_first(satisfy_p(lambda node: node.spelling == function_name), root)
-    print("-------------------")
-    print_kinds(root)
-    print("-------------------")
-    print(*[i.type.spelling for i in function.get_arguments()])
-    print("-------------------")
-    traverse_function(function)
-    print("-------------------")
-    traverse_apply(
-        block_of_p(expr_p | stmt_p),
-        lambda exprs: print(*[expr.kind for expr in exprs]),
-        function,
-    )
-    print("-------------------")
-    print(pretty_function.name)
-    print("-------------------")
-    traverse_apply(silly_expr_p, lambda expr: print(str(expr)), function)
-    print("-------------------")
-    traverse_apply(
-        CounterForPattern(block_of_p(expr_p | stmt_p)),
-        lambda expr: print(str(expr)),
-        function,
-    )
+    # function = find_first(satisfy_p(lambda node: node.spelling == function_name), root)
+    # print("-------------------")
+    # print_kinds(function.body)
+    # print("-------------------")
+    # print_kinds(root)
+    # print("-------------------")
+    # print(*[i.type.spelling for i in function.get_arguments()])
+    # print("-------------------")
+    # traverse_function(function.body)
+    # print("-------------------")
+    # traverse_apply(
+    #     block_of_p(expr_p | stmt_p),
+    #     lambda exprs: print(*[expr.kind for expr in exprs]),
+    #     function.body,
+    # )
+    # print("-------------------")
+    # print(pretty_function.name)
+    # print("-------------------")
+    # traverse_apply(silly_expr_p, lambda expr: print(str(expr)), function.body)
+    # print("-------------------")
+    # traverse_apply(
+    #     CounterForPattern(block_of_p(expr_p | stmt_p)),
+    #     lambda expr: print(str(expr)),
+    #     function.body,
+    # )
+    # print("-------------------")
+    print(silly_ast_pattern.match(function.body).pretty())

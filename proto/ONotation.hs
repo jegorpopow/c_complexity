@@ -9,7 +9,7 @@ data OExpr = OVar OVar
   | OCoeff OCoeff
   | OLog OExpr
   | OMax OExpr OExpr
-  deriving (Eq, Show)
+  deriving (Eq, Show, Rea)
 
 addONfs :: [OCoeff] -> [OCoeff] -> [OCoeff]
 addONfs a b = removeLeadingZeroes $ fmap (uncurry (+)) $ zipPadded a b
@@ -47,9 +47,9 @@ data SillyAST =
     SExpr                           -- Just some arithmetics 
   | SSkip 
   | SIf SillyAST SillyAST           -- if (...) {then} {else} 
-  | SCounterFor OVar OVar SillyAST  -- for (i = 0; i < var; i++) { body }
+  | SCounterFor OVar OVar SillyAST  -- for i in 0:n  {smth}
   | SBlock [SillyAST]
-  deriving (Eq, Show)
+  deriving (Eq, Show, Read)
 
 calculateAsymptotics :: SillyAST -> OExpr 
 calculateAsymptotics SExpr = OCoeff 1
@@ -57,7 +57,7 @@ calculateAsymptotics SSkip = OCoeff 0
 calculateAsymptotics (SIf t e) = OMax (calculateAsymptotics t) (calculateAsymptotics e)
 calculateAsymptotics (SCounterFor _ var body) = OProd (OVar var) (calculateAsymptotics body)
 calculateAsymptotics (SBlock exprs) = foldr OSum (OCoeff 0) $ fmap calculateAsymptotics exprs
-
+ 
 
 sillyBubbleSort :: SillyAST 
 sillyBubbleSort = SBlock [
