@@ -1,5 +1,7 @@
 module TotalNormalization.ONotation where 
 
+import Data.Ratio 
+
 type OVar = String
 type OCoeff = Int
 
