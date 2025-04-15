@@ -31,13 +31,15 @@ freeVars (OCoeff _) = Set.empty
 freeVars (OVar name) = Set.singleton name
 freeVars (OProd lhs rhs) = freeVars lhs `Set.union` freeVars rhs
 freeVars (OSum lhs rhs) = freeVars lhs `Set.union` freeVars rhs
-freeVars (OCounter counter from to expr) = undefined
+freeVars (OCounter counter from to expr) = counter `Set.delete` (freeVars expr `Set.union` freeVars from `Set.union` freeVars to)
 
 instance Ring OExpr where
+  -- Smart constructors for OSum
   radd (OCoeff 0) x = x
   radd x (OCoeff 0) = x
   radd (OCoeff x) (OCoeff y) = OCoeff $ x + y
   radd x y = OSum x y
+  -- Smart constructors for OProd
   rmul (OCoeff 1) x = x
   rmul x (OCoeff 1) = x
   rmul (OCoeff x) (OCoeff y) = OCoeff $ x * y
@@ -93,37 +95,49 @@ substPoly coefs val = foldr1 radd $ fmap (\ (i, v) -> v `rmul` symbolicPower i v
 -- receives a name of variable `n`, represents given expression 
 -- as `A * n^0 + B * n^1 + C * n ^ 2 + ...`, where A, B, C a expressions, which depends on 
 -- free variables of given expression only
-oSemiNormalForm :: OExpr -> OVar -> [OExpr]  
-oSemiNormalForm v@(OCoeff _) _ = [v]
-oSemiNormalForm v@(OVar var') var = if var' == var then [OCoeff 0, OCoeff 1] else [v]
-oSemiNormalForm (OProd lhs rhs) var = prodPoly (oSemiNormalForm lhs var) (oSemiNormalForm rhs var)
-oSemiNormalForm (OSum lhs rhs) var = addPoly (oSemiNormalForm lhs var) (oSemiNormalForm rhs var)
-oSemiNormalForm (OCounter counter from to expr) var = let normalizedExpr = oSemiNormalForm expr counter in 
+oSemiNormalForm :: Ovar -> OExpr -> [OExpr]  
+oSemiNormalForm _ v@(OCoeff _) = [v]
+oSemiNormalForm var v@(OVar var') = if var' == var then [OCoeff 0, OCoeff 1] else [v]
+oSemiNormalForm var (OProd lhs rhs) = prodPoly (oSemiNormalForm var lhs) (oSemiNormalForm var rhs)
+oSemiNormalForm var (OSum lhs rhs) = addPoly (oSemiNormalForm var lhs) (oSemiNormalForm var rhs)
+oSemiNormalForm var (OCounter counter from to expr) = let normalizedExpr = oSemiNormalForm counter expr in 
   let n = length normalizedExpr - 1 in 
-    (`oSemiNormalForm` var) $ rsumMany [bJ `rmul` (substPoly pJ to `rsub` substPoly pJ from) | 
+    oSemiNormalForm var $ rsumMany [bJ `rmul` (substPoly pJ to `rsub` substPoly pJ from) | 
       j <- [0..n],
       let pJ = sumOfPowers !! j, 
       let bJ = normalizedExpr !! j]
 
--- calculates the nf of polynom (or logarithmic polynom) in form [1, var, var^2, ...] 
--- oNormalForm :: OExpr -> OVar -> [OCoeff] 
--- oNormalForm (OCoeff val) _ = [val]
--- oNormalForm (OVar var') var = if var' == var then  [0, 1] else [0]
--- oNormalForm (OProd lhs rhs) var = prodONfs (oNormalForm lhs var) (oNormalForm rhs var)
--- oNormalForm (OSum lhs rhs) var = addONfs (oNormalForm lhs var) (oNormalForm rhs var) 
--- oNormalForm (OMax lhs rhs) var = maxONfs (oNormalForm lhs var) (oNormalForm rhs var)
--- oNormalForm (OLog _) _ = undefined
-
--- showAsymptotics ::  OExpr -> OVar -> String
--- showAsymptotics expr var = var ++ "^" ++ show (length (oNormalForm expr var) - 1)
-
 data SCFG  = 
-    SAtom                                  -- O(1) operations inside basic block, such as arithmetics 
+    SAtom                                  -- O(1) operations, such as arithmetics 
   | SSkip                                  -- noop
   | SIf SCFG SCFG                          -- if (A) {then} {else} 
   | SCounterFor OVar OExpr OExpr SCFG      -- for (i = A; i < B; i++) { body }
   | SBlock [SCFG]                          -- basic block of CFG 
   deriving (Eq, Show, Read)
+
+-- Represents a normal form of a multivariable polynomial
+data Multinomial = MCoeff OCoeff
+  | MVar OVar [Multinomial]
+
+oNormalForm :: OVar -> OExpr -> Multinomial
+oNormalForm name = oNormalFormImpl exprVars expr where 
+  exprVars :: [OVar]
+  exprVars = name : (Set.elems $ Set.delete name (freeVars expr))
+  oNormalForm :: [OVar] -> OExpr -> Multinomial
+  oNormalFormImpl  [] v@(OCoeff _) = MCoeff v
+  oNormalFormImpl  [] _ = undefined -- TODO: throw/catch  
+  oNormalFormImpl var:vars expr = MVar var $ fmap (oNormalForm vars) (oSemiNormalForm var expr) 
+
+multinomialVars :: Multinomial -> [OVar]
+multinomialVars MCoeff = []
+multinomialVars MVar var rest = var : (multinomialVars $ head rest)
+
+multinomialExpr :: Multinomial -> OExpr
+multinomialExpr (MCoeff coef) = OCoeff coef
+multinomialExpr (MVar var coefs) = substPoly (OVar var) (fmap multinomialExpr coefs)
+
+printAsymptotics :: OVar -> Multinomial -> String 
+printAsymptotics var m = undefined  
 
 
 -- Receives the program CFG, reduces it to receivce a complex expression, which describes a number of operations it performs  
