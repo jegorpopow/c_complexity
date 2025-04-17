@@ -1,6 +1,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 
-module V2.ONotation where 
+module Polynomial.ONotation where 
 
 import Data.Ratio
 import qualified Data.Set as Set
@@ -26,8 +26,26 @@ data OExpr = OVar OVar
   | OCounter OVar OExpr OExpr OExpr
    deriving (Eq, Show, Read)
 
+constPropagation :: OExpr -> OExpr
+constPropagation v@(OVar _) = v
+constPropagation c@(OCoeff _) = c
+constPropagation (OSum lhs rhs) = case (constPropagation lhs, constPropagation rhs) of 
+  ((OCoeff l), (OCoeff r)) -> OCoeff $ l + r
+  ((OCoeff 0), r)          -> r
+  (l, (OCoeff 0))          -> l
+  (l, r)                   -> OSum l r
+constPropagation (OProd lhs rhs) = case (constPropagation lhs, constPropagation rhs) of 
+  ((OCoeff l), (OCoeff r)) -> OCoeff $ l * r
+  ((OCoeff 1), r)          -> r
+  (l, (OCoeff 1))          -> l
+  (l, r)                   -> OProd l r 
+constPropagation (OCounter c f t e) = OCounter c (constPropagation f) (constPropagation t) (constPropagation e)
+
 prettyExpr :: OExpr -> String
-prettyExpr (OCoeff n) = show $ fromIntegral (numerator n) / fromIntegral (denominator n) 
+prettyExpr (OCoeff n) = if denominator n /= 1 then 
+    (show $ fromIntegral (numerator n) / fromIntegral (denominator n))
+  else 
+    show $ numerator n
 prettyExpr (OVar var) = var 
 prettyExpr (OSum lhs rhs) = "(" ++ prettyExpr lhs ++ " + " ++ prettyExpr rhs ++ ")"
 prettyExpr (OProd lhs rhs) = "(" ++ prettyExpr lhs ++ " * " ++ prettyExpr rhs ++ ")"
@@ -128,13 +146,14 @@ data Multinomial = MCoeff OCoeff
   deriving (Show, Eq)
 
 oNormalForm :: OVar -> OExpr -> Multinomial
-oNormalForm name expr = oNormalFormImpl exprVars expr where 
+oNormalForm name expr = oNormalFormImpl exprVars expr' where 
+  expr' = constPropagation expr
   exprVars :: [OVar]
-  exprVars = name : (Set.elems $ Set.delete name (freeVars expr))
+  exprVars = name : (Set.elems $ Set.delete name (freeVars expr'))
   oNormalFormImpl :: [OVar] -> OExpr -> Multinomial
   oNormalFormImpl  [] (OCoeff v) = MCoeff v
   oNormalFormImpl  [] _ = undefined -- TODO: throw/catch  
-  oNormalFormImpl (var:vars) expr = MVar var $ fmap (oNormalFormImpl vars) (oSemiNormalForm var expr) 
+  oNormalFormImpl (var:vars) expr = MVar var $ fmap (oNormalFormImpl vars) (fmap constPropagation $ oSemiNormalForm var expr) 
 
 multinomialVars :: Multinomial -> [OVar]
 multinomialVars (MCoeff _) = []
@@ -148,7 +167,7 @@ printAsymptotics :: Multinomial -> String
 printAsymptotics (MVar _ coefs ) = let n = length coefs -1 in 
   case  multinomialExpr $ coefs !! n of 
     (OCoeff _) ->  "O(n ^ " ++ show n ++ ")"
-    v          ->  "O(" ++ prettyExpr v ++ " * n ^" ++ show n ++ ")" 
+    v          ->  "O(" ++ prettyExpr v ++ " * n ^ " ++ show n ++ ")" 
 
 -- Receives the program CFG, reduces it to receivce a complex expression, which describes a number of operations it performs  
 calculateAsymptotics :: SCFG -> OExpr 

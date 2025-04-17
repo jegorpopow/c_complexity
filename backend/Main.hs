@@ -1,8 +1,9 @@
 module Main where
 
-import TotalNormalization.ONotation
+import Polynomial.ONotation
 
 main :: IO ()
 main = do 
-  value <- readLn 
-  putStr $ "O(" ++ showAsymptotics (calculateAsymptotics value) "n" ++ ")\n"
+  raw_cfg <- getLine
+  let cfg = read raw_cfg :: SCFG
+  putStrLn $ printAsymptotics $ oNormalForm "n" $ calculateAsymptotics cfg
