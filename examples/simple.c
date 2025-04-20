@@ -51,7 +51,7 @@ int sqr(int n) {
     return res;
 }
 
-
+// @param(m)
 void matmul( /*target parameter*/ int n, /*free var*/ int m, /* free var */ int l, int* lhs, int* rhs, int* res) {
     for(int i = 0; i < n; i++) {
         for (int j = 0; j < l; j++) {
@@ -61,4 +61,10 @@ void matmul( /*target parameter*/ int n, /*free var*/ int m, /* free var */ int 
             }
         }
     }
+}
+
+// @param(k)
+void call_foreign() {
+    /* @loop_variant: n*/
+    sqr(5);
 }

@@ -4,6 +4,7 @@ import Polynomial.ONotation
 
 main :: IO ()
 main = do 
+  parameterName <- getLine
   raw_cfg <- getLine
   let cfg = read raw_cfg :: SCFG
-  putStrLn $ printAsymptotics $ oNormalForm "n" $ calculateAsymptotics cfg
+  putStrLn $ printAsymptotics parameterName $ oNormalForm parameterName $ calculateAsymptotics cfg

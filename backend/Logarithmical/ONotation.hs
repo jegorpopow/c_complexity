@@ -4,8 +4,6 @@ module Polynomial.ONotation where
 
 import Data.Ratio ( (%), denominator, numerator )
 import qualified Data.Set as Set
-import Data.Void (vacuous)
-import Foreign (free)
 
 type OVar = String
 type OCoeff = Rational
@@ -27,19 +25,6 @@ data OExpr = OVar OVar
   | OProd OExpr OExpr
   | OCounter OVar OExpr OExpr OExpr
    deriving (Eq, Show, Read)
-
-substExpr :: OVar -> OExpr -> OExpr -> OExpr
-substExpr name v v'@(OVar name') | name == name' = v
-                                 | otherwise = v'
-substExpr _ v v'@(OCoeff _) = v'
-substExpr n v (OSum l r) = OSum (substExpr n v l) (substExpr n v r)
-substExpr n v (OProd l r) = OProd (substExpr n v l) (substExpr n v r)
-substExpr n v (OCounter c f t e) = OCounter c (substExpr n v f) (substExpr n v t) (substExpr n v e)
-
--- substExpr n v e = undefined
---   where 
---     free :: Set.Set OVar 
---     free = freeVars v
 
 constPropagation :: OExpr -> OExpr
 constPropagation v@(OVar _) = v
@@ -178,11 +163,11 @@ multinomialExpr :: Multinomial -> OExpr
 multinomialExpr (MCoeff coef) = OCoeff coef
 multinomialExpr (MVar var coefs) = substPoly (fmap multinomialExpr coefs) (OVar var)
 
-printAsymptotics :: String -> Multinomial ->  String
-printAsymptotics name (MVar _ coefs) = let n = length coefs -1 in
+printAsymptotics :: Multinomial -> String
+printAsymptotics (MVar _ coefs ) = let n = length coefs -1 in
   case  multinomialExpr $ coefs !! n of
-    (OCoeff _) ->  "O(" ++ name ++" ^ " ++ show n ++ ")"
-    v          ->  "O(" ++ prettyExpr v ++ " * " ++ name ++" ^ " ++ show n ++ ")"
+    (OCoeff _) ->  "O(n ^ " ++ show n ++ ")"
+    v          ->  "O(" ++ prettyExpr v ++ " * n ^ " ++ show n ++ ")"
 
 -- Receives the program CFG, reduces it to receivce a complex expression, which describes a number of operations it performs  
 calculateAsymptotics :: SCFG -> OExpr
