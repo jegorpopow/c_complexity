@@ -1,0 +1,4 @@
+frontend/__pycache__/
+*.hi
+*.o 
+backend/main
