@@ -1,15 +1,30 @@
 # first-class pattern, .match(tree) returns None on failure
 
+from typing import List, Any
+
 
 class Pattern(object):
     def match(self, tree):
         assert False
+
+    def match_first(self, trees):
+        for tree in trees:
+            if (res := self.match(tree)) is not None:
+                return res
+        return None
 
     def __or__(self, other):
         return AlternativePattern(self, other)
 
     def __mul__(self, other):
         return ComposePattern(self, other)
+
+
+def zip_match(patterns: List[Pattern], targets: List[Any]) -> List[Any] | None:
+    results = [pattern.match(target) for pattern, target in zip(patterns, targets)]
+    if any(result is None for result in results):
+        return None
+    return results
 
 
 ### Some high-level pattern combinators
@@ -54,6 +69,14 @@ class AlternativePattern(Pattern):
         return self.right.match(tree)
 
 
+class WrapperPattern(Pattern):
+    def __init__(self, f):
+        self.f = f
+
+    def match(self, tree):
+        return self.f(tree)
+
+
 class ConditionPattern(Pattern):
     def __init__(self, predicate, base):
         self.base = base
@@ -82,6 +105,7 @@ class FixpointPattern(Pattern):
 wildcard_p = WildcardPattern()
 filter_p = lambda pred, base: ConditionPattern(pred, base)
 satisfy_p = lambda pred: filter_p(pred, wildcard_p)
+from_function_p = lambda f: WrapperPattern(f)
 map_p = lambda f, base: MappedPattern(f, base)
 fix_p = lambda pat_gen: FixpointPattern(pat_gen)
 

@@ -1,5 +1,6 @@
 from typing import Any, List
 from dataclasses import dataclass
+from fractions import Fraction
 
 
 class FunctionDescriprtion:
@@ -11,9 +12,10 @@ class FunctionDescriprtion:
         self.comment = corresponding_comment
 
 
-def pretty_ratio(n: int) -> str:
+def pretty_ratio(n: int, d: int = 1) -> str:
     numerator = n if n >= 0 else f"({n})"
-    return f"(OCoeff ({numerator} % 1))"
+    assert d > 0
+    return f"(OCoeff ({numerator} % {d}))"
 
 
 @dataclass
@@ -24,12 +26,33 @@ class NamedFunctionCall:
     def pretty(self) -> str:
         return ""
 
+    def fold_to_const(self) -> Fraction | None:
+        return None
+
 
 @dataclass
 class SillyBinop:
     operator: str
     lhs: any
     rhs: any
+
+    def fold_to_const(self) -> Fraction | None:
+        if (lhs := self.lhs.fold_to_const()) is not None and (
+            rhs := self.lhs.fold_to_const()
+        ):
+            match self.operator:
+                case "+":
+                    return lhs + rhs
+                case "*":
+                    return lhs * rhs
+                case "-":
+                    return lhs - rhs
+                case "/":
+                    return lhs / rhs
+                case "%":
+                    return lhs % rhs
+                case _:
+                    return None
 
     def pretty(self) -> str:
         match self.operator:
@@ -41,8 +64,17 @@ class SillyBinop:
                 return SillyBinop(
                     "+", self.lhs, SillyUnop("-", True, self.rhs)
                 ).pretty()
+            case "/":
+                if (folded_rhs := self.rhs.fold_to_const()) is not None:
+                    if folded_rhs == 0:
+                        return pretty_ratio(0)
+                    inverted: Fraction = 1 / folded_rhs
+                    if inverted > 0:
+                        return f"(OProd {pretty_ratio(inverted.denominator, inverted.numerator)} {self.lhs.pretty()})"
+                    else:
+                        return f"(OProd {pretty_ratio(-inverted.denominator, -inverted.numerator)} {self.lhs.pretty()})"
             case _:
-                raise ValueError("Unsupported operator")
+                raise ValueError(f"Unsupported operator {self.operator}")
 
     def __str__(self):
         return f"({str(self.lhs)}{self.operator}{str(self.rhs)})"
@@ -64,6 +96,16 @@ class SillyUnop:
         else:
             return f"({str(self.operand)}{self.operator})"
 
+    def fold_to_const(self) -> Fraction | None:
+        if (
+            self.prefix
+            and self.operator == "-"
+            and (operand := self.operand.fold_to_const()) is not None
+        ):
+            return -operand
+        else:
+            return None
+
 
 @dataclass
 class SillyVar:
@@ -74,6 +116,9 @@ class SillyVar:
 
     def __str__(self):
         return self.name
+
+    def fold_to_const(self) -> Fraction | None:
+        return None
 
 
 @dataclass
@@ -94,6 +139,9 @@ class SillyConst:
     def __str__(self):
         return self.value
 
+    def fold_to_const(self) -> Fraction | None:
+        return Fraction(self.value)
+
 
 @dataclass
 class SillyCounterFor:
@@ -104,7 +152,15 @@ class SillyCounterFor:
     body: Any
 
     def pretty(self) -> str:
-        return f'(SCounterFor "{self.counter}" {self.intital.pretty()} {self.final.pretty()} {self.body.pretty()})'
+        match self.counter_increase:
+            case "++":
+                return f'(SCounterFor "{self.counter}" {self.intital.pretty()} {self.final.pretty()} {self.body.pretty()})'
+            case "--":
+                return f'(SCounterFor "{self.counter}" {self.final.pretty()} {self.intital.pretty()} {self.body.pretty()})'
+            case _:
+                raise ValueError(
+                    "Found cycle for with unknwon counter mutation function"
+                )
 
 
 @dataclass

@@ -35,7 +35,7 @@ def main(file_name, function_name, dump_cfg, dump_ast):
     if dump_ast:
         dump_nodes(function.body, file=sys.stderr)
 
-    cfg = silly_ast_pattern.match(function.body)
+    cfg = silly_ast_pattern(PatternContext(tu)).match(function.body)
 
     if cfg is None:
         print("Non supported program found", file=sys.stderr)
@@ -46,7 +46,7 @@ def main(file_name, function_name, dump_cfg, dump_ast):
 
     if (
         function.comment is not None
-        and (direcrive := parse_directive(function.comment)) is not None
+        and (direcrive := param_pattern_p.match(function.comment)) is not None
     ):
         print(direcrive.args[0])
     else:

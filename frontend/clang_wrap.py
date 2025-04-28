@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from patterns import *
 from domain import *
+from comments_parser import *
 
 
 def beginning_line(elem: Any) -> int:
@@ -32,6 +33,61 @@ with_unexposed_p = lambda pat: pat | (
 )
 
 
+class TranslationUnit:
+    def __init__(self, file_name, args=["-std=c11"]):
+        self.file_name = file_name
+        self.index = clang.cindex.Index.create()
+        self.args = args
+        self.clang_tu = self.index.parse(self.file_name, args=args)
+        self.root = self.clang_tu.cursor
+        self.tokens = list(self.root.get_tokens())
+
+    def get_function(self, function_name):
+        pretty_function: FunctionDescriprtion | None = find_first(
+            named_function_p(function_name), self.root
+        )
+        if pretty_function is None:
+            return pretty_function
+        first_line = beginning_line(pretty_function.header)
+        comments = self.find_comments(first_line - 1)
+        if len(comments) > 0:
+            pretty_function.comment = comments[0]
+        return pretty_function
+
+    def find_one_line_comment(self, line):
+        for token in self.tokens:
+            if (
+                token.kind == clang.cindex.TokenKind.COMMENT
+                and token.spelling.startswith("//")
+                and token.extent.start.line == line
+            ):
+                # print(token_to_string(token))
+                return token.spelling[2:]
+
+        return None
+
+    def find_multiline_comments(self, line):
+        result = []
+        for token in self.tokens:
+            if (
+                token.kind == clang.cindex.TokenKind.COMMENT
+                and token.spelling.startswith("/*")
+                and token.extent.start.line <= line
+                and token.extent.end.line >= line
+            ):
+                result.append(token.spelling[2:-2])
+        return result
+
+    def find_comments(self, line):
+        one_line = self.find_one_line_comment(line)
+        result = self.find_multiline_comments(line)
+
+        if one_line is not None:
+            result.append(one_line)
+
+        return result
+
+
 class BlockPattern(Pattern):
     def __init__(self, atom):
         self.atom = atom
@@ -46,6 +102,11 @@ class BlockPattern(Pattern):
 
 
 block_of_p = lambda pat: BlockPattern(pat)
+
+
+@dataclass
+class PatternContext:
+    tu: TranslationUnit
 
 
 class FunctionPattern(Pattern):
@@ -209,9 +270,11 @@ class CounterForPattern(Pattern):
         ) * unwrap_singleton_p(of_kind_p(clang.cindex.CursorKind.DECL_STMT))
 
         mutation_p = filter_p(
-            lambda expr: expr.operator in ["++", "--"], unop_of_p(expr_var_p)
-        )  # TODO: recognize `i += 1` or `i *= 2` expressions
-
+            lambda expr: expr.operator in ["++", "--"], unop_of_p(silly_expr_p)
+        ) | filter_p(
+            lambda expr: expr.operator in ["+=", "-="],
+            binop_of_p(silly_expr_p, silly_expr_p),
+        )
         pre, condition, iter, body = [i for i in tree.get_children()]
 
         condition: SillyBinop = silly_expr_p.match(condition)
@@ -231,17 +294,109 @@ class CounterForPattern(Pattern):
             return
 
         counter_name = init.lhs.name
-        counter_lower_bound = init.rhs
 
-        # TODO variate cycle types
-        if condition.operator not in ["<", "<="] or mut.operator != "++":
+        if condition.operator in ["<", "<="] and mut.operator in ["++", "+="]:
+            counter_lower_bound = init.rhs
+            counter_upper_bound = condition.rhs
+            return SillyCounterFor(
+                counter_name, counter_lower_bound, counter_upper_bound, "++", body
+            )
+
+        if condition.operator in [">", ">="] and mut.operator in ["--", "-="]:
+            counter_lower_bound = condition.rhs
+            counter_upper_bound = init.rhs
+            return SillyCounterFor(
+                counter_name, counter_lower_bound, counter_upper_bound, "--", body
+            )
+
+        return None
+
+
+class HintedLoopPattern(Pattern):
+    def __init__(self, ctx: PatternContext, body_pattern: Pattern):
+        self.ctx = ctx
+        self.body_pattern = body_pattern
+
+    def match(self, tree):
+        if tree.kind not in [
+            clang.cindex.CursorKind.FOR_STMT,
+            clang.cindex.CursorKind.WHILE_STMT,
+        ]:
             return None
 
-        counter_upper_bound = condition.rhs
+        line = beginning_line(tree) - 1
+        comments = self.ctx.tu.find_comments(line)
 
-        return SillyCounterFor(
-            counter_name, counter_lower_bound, counter_upper_bound, "++", body
+        loop_variant_directive: Directive = loop_variant_p.match_first(comments)
+        if loop_variant_directive is None:
+            return None
+
+        body = None
+        match tree.kind:
+            case clang.cindex.CursorKind.FOR_STMT:
+                _, _, _, body = [i for i in tree.get_children()]
+            case clang.cindex.CursorKind.WHILE_STMT:
+                _, body = [i for i in tree.get_children()]
+            case _:
+                return None
+
+        body = self.body_pattern.match(body)
+
+        if body is None:
+            return None
+
+        parsed = zip_match(
+            patterns=[wildcard_p, text_expr_p, text_expr_p, wildcard_p],
+            targets=loop_variant_directive.args,
         )
+
+        if parsed is None:
+            return None
+
+        counter, initial, final, step = parsed
+        return SillyCounterFor(
+            counter, initial, final, "++" if int(step) > 0 else "--", body
+        )
+
+
+class AlreadyEncounteredLoopPattern(Pattern):
+    def __init__(self, ctx: PatternContext, body_pattern: Pattern):
+        self.ctx = ctx
+        self.body_pattern = body_pattern
+
+    def match(self, tree):
+        if tree.kind not in [
+            clang.cindex.CursorKind.FOR_STMT,
+            clang.cindex.CursorKind.WHILE_STMT,
+        ]:
+            return None
+
+        line = beginning_line(tree) - 1
+        comments = self.ctx.tu.find_comments(line)
+
+        loop_variant_directive = already_encountered_label_p.match_first(comments)
+        if loop_variant_directive is None:
+            return None
+
+        body = None
+        match tree.kind:
+            case clang.cindex.CursorKind.FOR_STMT:
+                _, _, _, body = [i for i in tree.get_children()]
+            case clang.cindex.CursorKind.WHILE_STMT:
+                _, body = [i for i in tree.get_children()]
+            case _:
+                return None
+
+        body = self.body_pattern.match(body)
+        if body is None:
+            return None
+        return SillyExpr()
+
+
+hinted_loop_p = lambda ctx: lambda body: HintedLoopPattern(ctx, body)
+already_encountered_p = lambda ctx: lambda body: AlreadyEncounteredLoopPattern(
+    ctx, body
+)
 
 
 def traverse_apply(pattern: Pattern, action, root):
@@ -294,7 +449,7 @@ def dump_tokens(tokens):
         print(token_to_string(token))
 
 
-silly_ast_pattern = fix_p(
+silly_ast_pattern = lambda ctx: fix_p(
     lambda silly_ast: map_p(lambda c: SillyBlock(c), block_of_p(silly_ast))
     | silly_if_p(silly_ast)
     | map_p(lambda _: SillyExpr(), expr_p)
@@ -307,63 +462,9 @@ silly_ast_pattern = fix_p(
         satisfy_p(lambda tree: tree.kind == clang.cindex.CursorKind.RETURN_STMT),
     )
     | CounterForPattern(silly_ast)
+    | hinted_loop_p(ctx)(silly_ast)
+    | already_encountered_p(ctx)(silly_ast)
 )
-
-
-class TranslationUnit:
-    def __init__(self, file_name, args=["-std=c11"]):
-        self.file_name = file_name
-        self.index = clang.cindex.Index.create()
-        self.args = args
-        self.clang_tu = self.index.parse(self.file_name, args=args)
-        self.root = self.clang_tu.cursor
-        self.tokens = list(self.root.get_tokens())
-
-    def get_function(self, function_name):
-        pretty_function: FunctionDescriprtion | None = find_first(
-            named_function_p(function_name), self.root
-        )
-        if pretty_function is None:
-            return pretty_function
-        first_line = beginning_line(pretty_function.header)
-        comments = self.find_comments(first_line - 1)
-        if len(comments) > 0:
-            pretty_function.comment = comments[0]
-        return pretty_function
-
-    def find_one_line_comment(self, line):
-        for token in self.tokens:
-            if (
-                token.kind == clang.cindex.TokenKind.COMMENT
-                and token.spelling.startswith("//")
-                and token.extent.start.line == line
-            ):
-                # print(token_to_string(token))
-                return token.spelling[2:]
-
-        return None
-
-    def find_multiline_comments(self, line):
-        result = []
-        for token in self.tokens:
-            if (
-                token.kind == clang.cindex.TokenKind.COMMENT
-                and token.spelling.startswith("/*")
-                and token.extent.start.line <= line
-                and token.extent.end.line >= line
-            ):
-                result.append(token.spelling[2:-2])
-        return result
-
-    def find_comments(self, line):
-        one_line = self.find_one_line_comment(line)
-        result = self.find_multiline_comments(line)
-
-        if one_line is not None:
-            result.append(one_line)
-
-        return result
-
 
 if __name__ == "__main__":
     assert len(sys.argv) >= 3
