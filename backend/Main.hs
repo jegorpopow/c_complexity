@@ -1,10 +1,11 @@
 module Main where
 
-import Polynomial.ONotation
+import Logarithmical.ONotation
 
 main :: IO ()
-main = do 
+main = do
   parameterName <- getLine
+  functionName <- getLine
   raw_cfg <- getLine
   let cfg = read raw_cfg :: SCFG
-  putStrLn $ printAsymptotics parameterName $ oNormalForm parameterName $ calculateAsymptotics cfg
+  putStrLn $ resolveEquation parameterName $ calculateAsymptotics functionName cfg

@@ -16,3 +16,7 @@ O(n ^ 2)
 Analyzing function 'matmul' from file 'examples/simple.c'
 O(((1 + m) * l) * n ^ 1)
 
+Analyzing function 'divide_and_rule' from file 'examples/simple.c'
+O(n ^ (1) * log(n))
+Analyzing function 'just_divide' from file 'examples/simple.c'
+O(n ^ (1))

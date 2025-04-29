@@ -8,6 +8,9 @@ from domain import *
 from comments_parser import *
 
 
+DEFAULT_PARAMETER_NAME = "n"
+
+
 def beginning_line(elem: Any) -> int:
     return elem.extent.start.line
 
@@ -26,7 +29,9 @@ unwrap_singleton_p = lambda wrapper_pat: map_p(
 )
 
 expr_p = satisfy_p(lambda tree: tree.kind.is_expression())
+decl_p = satisfy_p(lambda tree: tree.kind == clang.cindex.CursorKind.DECL_STMT)
 stmt_p = satisfy_p(lambda tree: tree.kind.is_statement())
+return_p = satisfy_p(lambda tree: tree.kind == clang.cindex.CursorKind.RETURN_STMT)
 
 with_unexposed_p = lambda pat: pat | (
     pat * unwrap_singleton_p(of_kind_p(clang.cindex.CursorKind.UNEXPOSED_EXPR))
@@ -50,8 +55,13 @@ class TranslationUnit:
             return pretty_function
         first_line = beginning_line(pretty_function.header)
         comments = self.find_comments(first_line - 1)
+        param: Directive = param_pattern_p.match_first(comments)
+        if param is not None:
+            pretty_function.parameter_name = param.args[0]
+        else:
+            pretty_function.parameter_name = DEFAULT_PARAMETER_NAME
         if len(comments) > 0:
-            pretty_function.comment = comments[0]
+            pretty_function.comment = comments
         return pretty_function
 
     def find_one_line_comment(self, line):
@@ -106,6 +116,7 @@ block_of_p = lambda pat: BlockPattern(pat)
 
 @dataclass
 class PatternContext:
+    function: FunctionDescriprtion
     tu: TranslationUnit
 
 
@@ -198,6 +209,41 @@ silly_expr_p = fix_p(
 )
 
 
+class FunctionCallPattern(Pattern):
+    def __init__(self, args: List[Pattern], name: str | None = None):
+        self.args_pattern = args
+        self.name = name
+
+    def match(self, tree):
+        if tree.kind != clang.cindex.CursorKind.CALL_EXPR:
+            return None
+
+        if self.name is not None and tree.spelling != self.name:
+            return None
+
+        args = list(tree.get_children())[1:]
+        args = zip_match(patterns=self.args_pattern, targets=args)
+
+        if args is None:
+            return None
+
+        return NamedFunctionCall(tree.spelling, args)
+
+
+def function_one_argument_patterns(
+    function: FunctionDescriprtion, pattern: Pattern
+) -> List[Pattern]:
+    return [
+        pattern if i == function.parameter_idx() else map_p(lambda _: None, wildcard_p)
+        for i in range(len(function.args))
+    ]
+
+
+recursive_call_p = lambda ctx: FunctionCallPattern(
+    function_one_argument_patterns(ctx.function, silly_expr_p), name=ctx.function.name
+)
+
+
 class IfPattern(Pattern):
     def __init__(self, condition, then_branch, else_branch=None, else_obligatory=False):
         self.condition = condition
@@ -222,28 +268,6 @@ class IfPattern(Pattern):
 
 
 silly_if_p = lambda branch: IfPattern(wildcard_p, branch, branch, else_obligatory=False)
-
-
-class FunctionCallPattern(Pattern):
-    def __init__(self, args, name=None):
-        self.args = args
-        self.name = name
-
-    def match(self, tree):
-        if tree.kind != clang.cindex.CursorKind.CALL_EXPR:
-            return None
-
-        if self.name is not None and tree.spelling != self.name:
-            return None
-
-        args = [self.args.match(arg) for arg in list(tree.get_children())[1:]]
-        if any(arg is None for arg in args):
-            return None
-
-        return NamedFunctionCall(tree.spelling, args)
-
-
-function_call_p = lambda arg, name=None: FunctionCallPattern(arg, name)
 
 
 class CounterForPattern(Pattern):
@@ -398,6 +422,10 @@ already_encountered_p = lambda ctx: lambda body: AlreadyEncounteredLoopPattern(
     ctx, body
 )
 
+expr_to_block_p = lambda p: map_p(
+    lambda elements: SillyBlock(elements), some_p(traverse_apply, p)
+) * (expr_p | decl_p | return_p)
+
 
 def traverse_apply(pattern: Pattern, action, root):
     """Visits all AST Nodes, performs action on all nodes, that matches pattern"""
@@ -452,15 +480,10 @@ def dump_tokens(tokens):
 silly_ast_pattern = lambda ctx: fix_p(
     lambda silly_ast: map_p(lambda c: SillyBlock(c), block_of_p(silly_ast))
     | silly_if_p(silly_ast)
+    | expr_to_block_p(recursive_call_p(ctx))
     | map_p(lambda _: SillyExpr(), expr_p)
-    | map_p(
-        lambda _: SillyExpr(),
-        satisfy_p(lambda tree: tree.kind == clang.cindex.CursorKind.DECL_STMT),
-    )
-    | map_p(
-        lambda _: SillyExpr(),
-        satisfy_p(lambda tree: tree.kind == clang.cindex.CursorKind.RETURN_STMT),
-    )
+    | map_p(lambda _: SillyExpr(), decl_p)
+    | map_p(lambda _: SillyExpr(), return_p)
     | CounterForPattern(silly_ast)
     | hinted_loop_p(ctx)(silly_ast)
     | already_encountered_p(ctx)(silly_ast)

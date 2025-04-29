@@ -23,9 +23,9 @@ def main(file_name, function_name, dump_cfg, dump_ast):
 
     try:
         tu = TranslationUnit(file_name)
-        function = tu.get_function(function_name)
-    except:
-        print("Can not parse file", file=sys.stderr)
+        function: FunctionDescriprtion = tu.get_function(function_name)
+    except Exception as e:
+        print(f"Can not parse file due to reason {e.with_traceback()}", file=sys.stderr)
         exit(1)
 
     if function is None:
@@ -35,7 +35,7 @@ def main(file_name, function_name, dump_cfg, dump_ast):
     if dump_ast:
         dump_nodes(function.body, file=sys.stderr)
 
-    cfg = silly_ast_pattern(PatternContext(tu)).match(function.body)
+    cfg = silly_ast_pattern(PatternContext(function, tu)).match(function.body)
 
     if cfg is None:
         print("Non supported program found", file=sys.stderr)
@@ -44,13 +44,12 @@ def main(file_name, function_name, dump_cfg, dump_ast):
     if dump_cfg:
         print(cfg.pretty(), file=sys.stderr)
 
-    if (
-        function.comment is not None
-        and (direcrive := param_pattern_p.match(function.comment)) is not None
-    ):
-        print(direcrive.args[0])
+    if function.parameter_name is not None:
+        print(function.parameter_name)
     else:
-        print("n")
+        print("Failed to determine function parameter name", file=sys.stderr)
+        exit(1)
+    print(function.name)
     print(cfg.pretty())
 
 

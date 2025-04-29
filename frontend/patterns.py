@@ -21,10 +21,18 @@ class Pattern(object):
 
 
 def zip_match(patterns: List[Pattern], targets: List[Any]) -> List[Any] | None:
+    if len(patterns) != len(targets):
+        return None
     results = [pattern.match(target) for pattern, target in zip(patterns, targets)]
     if any(result is None for result in results):
         return None
     return results
+
+
+def collect_matches(pattern: Pattern, traverse_apply_func, target):
+    collected = []
+    traverse_apply_func(pattern, lambda matched: collected.append(matched), target)
+    return collected
 
 
 ### Some high-level pattern combinators
@@ -102,12 +110,25 @@ class FixpointPattern(Pattern):
         return self.step(self).match(tree)
 
 
+class SomeMatchesPattern(Pattern):
+    def __init__(self, traverse_apply_function, inner):
+        self.traverse_apply_function = traverse_apply_function
+        self.inner = inner
+
+    def match(self, tree):
+        matches = collect_matches(self.inner, self.traverse_apply_function, tree)
+        if len(matches) == 0:
+            return None
+        return matches
+
+
 wildcard_p = WildcardPattern()
 filter_p = lambda pred, base: ConditionPattern(pred, base)
 satisfy_p = lambda pred: filter_p(pred, wildcard_p)
 from_function_p = lambda f: WrapperPattern(f)
 map_p = lambda f, base: MappedPattern(f, base)
 fix_p = lambda pat_gen: FixpointPattern(pat_gen)
+some_p = lambda traverse, base: SomeMatchesPattern(traverse, base)
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ import Data.Ratio ( (%), denominator, numerator )
 import qualified Data.Set as Set
 import Data.Void (vacuous)
 import Foreign (free)
+import Math.Faulhaber (faulhabersCoefs)
 
 type OVar = String
 type OCoeff = Rational
@@ -110,14 +111,6 @@ prodPoly :: Ring d => [d] -> [d] -> [d]
 prodPoly [] _ = [rzero]
 prodPoly (x : xs) ys = addPoly (rzero : prodPoly xs ys) (fmap (`rmul` x) ys)
 
--- TODO: use Faulhabers formula directly
-sumOfPowers :: [[OExpr]]
-sumOfPowers = fmap OCoeff <$> [
-  [0, 1],
-  [0, 1 % 2, 1 % 2],
-  [0, 1 % 6, 1 % 2, 1 % 3],
-  [0, 0, 1 % 4, 1 % 2, 1 % 4]]
-
 rsumMany :: Ring d => [d] -> d
 rsumMany [] = rzero
 rsumMany arr = foldr1 radd arr
@@ -144,7 +137,7 @@ oSemiNormalForm var (OCounter counter from to expr) = let normalizedExpr = oSemi
   let n = length normalizedExpr - 1 in
     oSemiNormalForm var $ rsumMany [bJ `rmul` (substPoly pJ to `rsub` substPoly pJ from) |
       j <- [0..n],
-      let pJ = sumOfPowers !! j,
+      let pJ = fmap OCoeff $ faulhabersCoefs !! j,
       let bJ = normalizedExpr !! j]
 
 data SCFG  =

@@ -13,7 +13,10 @@ if __name__ == "__main__":
     pretty_function = tu.get_function(function_name=function_name)
 
     print(
-        find_first(hinted_loop_p(PatternContext(tu))(wildcard_p), pretty_function.body)
+        find_first(
+            hinted_loop_p(PatternContext(pretty_function, tu))(wildcard_p),
+            pretty_function.body,
+        )
     )
 
     # print(tu.find_comments(66))

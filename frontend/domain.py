@@ -7,9 +7,17 @@ class FunctionDescriprtion:
     def __init__(self, name, header, args, body, corresponding_comment=None):
         self.name = name
         self.header = header
-        self.args = {arg.spelling: arg.type.spelling for arg in args}
+        self.args = {arg.spelling: (arg.type.spelling, i) for i, arg in enumerate(args)}
         self.body = body
+        self.parameter_name = None
         self.comment = corresponding_comment
+
+    def parameter_idx(self):
+        if self.parameter_name is None or self.parameter_name not in self.args:
+            raise ValueError(
+                f"Function {self.name} has no parameter or wrong parameter declaration"
+            )
+        return self.args[self.parameter_name][1]
 
 
 def pretty_ratio(n: int, d: int = 1) -> str:
@@ -24,7 +32,8 @@ class NamedFunctionCall:
     args: List[Any]
 
     def pretty(self) -> str:
-        return ""
+        arg = next(arg for arg in self.args if arg is not None)
+        return f'(SCall "{self.function_name}" {arg.pretty()})'
 
     def fold_to_const(self) -> Fraction | None:
         return None
@@ -69,10 +78,7 @@ class SillyBinop:
                     if folded_rhs == 0:
                         return pretty_ratio(0)
                     inverted: Fraction = 1 / folded_rhs
-                    if inverted > 0:
-                        return f"(OProd {pretty_ratio(inverted.denominator, inverted.numerator)} {self.lhs.pretty()})"
-                    else:
-                        return f"(OProd {pretty_ratio(-inverted.denominator, -inverted.numerator)} {self.lhs.pretty()})"
+                    return f"(OProd {pretty_ratio(inverted.numerator, inverted.denominator)} {self.lhs.pretty()})"
             case _:
                 raise ValueError(f"Unsupported operator {self.operator}")
 
@@ -178,7 +184,8 @@ class SillyIf:
 
 @dataclass
 class SillyExpr:
-    pass
+    def __init__(self):
+        pass
 
     def pretty(self) -> str:
         return "SAtom"
