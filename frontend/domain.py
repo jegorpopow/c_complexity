@@ -10,6 +10,7 @@ class FunctionDescriprtion:
         self.args = {arg.spelling: (arg.type.spelling, i) for i, arg in enumerate(args)}
         self.body = body
         self.parameter_name = None
+        self.cfg = None
         self.comment = corresponding_comment
 
     def parameter_idx(self):

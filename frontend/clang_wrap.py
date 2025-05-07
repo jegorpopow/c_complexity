@@ -449,6 +449,15 @@ def find_first(pattern: Pattern, root):
     return None
 
 
+def contains_match(pattern: Pattern, root):
+    return find_first(pattern, root) is not None
+
+
+not_contains_p = lambda pattern: satisfy_p(
+    lambda root: not contains_match(pattern, root)
+)
+
+
 def extent_to_string(extent) -> str:
     return f"{extent.start.line}:{extent.start.column} - {extent.end.line}:{extent.end.column}"
 
