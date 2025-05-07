@@ -29,7 +29,9 @@ unwrap_singleton_p = lambda wrapper_pat: map_p(
 )
 
 expr_p = satisfy_p(lambda tree: tree.kind.is_expression())
+decl_p = satisfy_p(lambda tree: tree.kind == clang.cindex.CursorKind.DECL_STMT)
 stmt_p = satisfy_p(lambda tree: tree.kind.is_statement())
+return_p = satisfy_p(lambda tree: tree.kind == clang.cindex.CursorKind.RETURN_STMT)
 
 with_unexposed_p = lambda pat: pat | (
     pat * unwrap_singleton_p(of_kind_p(clang.cindex.CursorKind.UNEXPOSED_EXPR))
@@ -420,6 +422,10 @@ already_encountered_p = lambda ctx: lambda body: AlreadyEncounteredLoopPattern(
     ctx, body
 )
 
+expr_to_block_p = lambda p: map_p(
+    lambda elements: SillyBlock(elements), some_p(traverse_apply, p)
+) * (expr_p | decl_p | return_p)
+
 
 def traverse_apply(pattern: Pattern, action, root):
     """Visits all AST Nodes, performs action on all nodes, that matches pattern"""
@@ -441,6 +447,15 @@ def find_first(pattern: Pattern, root):
         if not child_result is None:
             return child_result
     return None
+
+
+def contains_match(pattern: Pattern, root):
+    return find_first(pattern, root) is not None
+
+
+not_contains_p = lambda pattern: satisfy_p(
+    lambda root: not contains_match(pattern, root)
+)
 
 
 def extent_to_string(extent) -> str:
@@ -474,16 +489,10 @@ def dump_tokens(tokens):
 silly_ast_pattern = lambda ctx: fix_p(
     lambda silly_ast: map_p(lambda c: SillyBlock(c), block_of_p(silly_ast))
     | silly_if_p(silly_ast)
-    | recursive_call_p(ctx)
+    | expr_to_block_p(recursive_call_p(ctx))
     | map_p(lambda _: SillyExpr(), expr_p)
-    | map_p(
-        lambda _: SillyExpr(),
-        satisfy_p(lambda tree: tree.kind == clang.cindex.CursorKind.DECL_STMT),
-    )
-    | map_p(
-        lambda _: SillyExpr(),
-        satisfy_p(lambda tree: tree.kind == clang.cindex.CursorKind.RETURN_STMT),
-    )
+    | map_p(lambda _: SillyExpr(), decl_p)
+    | map_p(lambda _: SillyExpr(), return_p)
     | CounterForPattern(silly_ast)
     | hinted_loop_p(ctx)(silly_ast)
     | already_encountered_p(ctx)(silly_ast)

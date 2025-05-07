@@ -102,8 +102,7 @@ int divide_and_rule(int n) {
         res++;
     }
 
-    divide_and_rule(n / 2);
-    divide_and_rule(n / 2);
+    res += divide_and_rule(n / 2) + divide_and_rule(n / 2);
 
     return res;
 }
@@ -115,8 +114,7 @@ int just_divide(int n) {
         res++;
     }
 
-    just_divide(n / 2);
-    return res;
+    return res + just_divide(n / 2);
 }
 
 indeces_t partition(int start, int n, int pivot, int* a) {

@@ -24,6 +24,5 @@ O(n ^ (1))
 
 Analyzing function 'partition' from file 'examples/simple.c'
 O(n ^ 1)
-
-Analyzing function 'quick_sort' from file 'examples/simple.c'
-O(n ^ (1) * log(n))
+Analyzing function 'matmul' from file 'examples/simple.c'
+O((n * l) * m ^ 1)
