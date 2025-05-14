@@ -57,6 +57,18 @@ int cube(int n) {
     return res;
 }
 
+int constant(int n) {
+    return 0;
+}
+
+int lin(int n) {
+    int res = 0;
+    for (int i = n * n * n - n; i < n * n * n; i++) {
+        res++;
+    }
+    return res;
+}
+
 int sqr(int n) {
     int res = 0;
     for (int i = 0; i < n; i++) {
@@ -103,6 +115,18 @@ int divide_and_rule(int n) {
     }
 
     res += divide_and_rule(n / 2) + divide_and_rule(n / 2);
+
+    return res;
+}
+
+int strange_rec(int n) {
+    int res = strange_rec(n / 2);
+
+    for (int i = 0; i < n * n; i++) {
+        res++;
+    }
+
+    res += strange_rec(n / 2) + strange_rec(n / 2);
 
     return res;
 }

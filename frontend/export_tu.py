@@ -11,8 +11,6 @@ class FrontendException(Exception):
         return self.desc
 
 
-
-
 DEFAULT_CFG_PATTERN = lambda tu: lambda func_desc: fix_p(
     lambda cfg: map_p(lambda c: SillyBlock(c), block_of_p(cfg))
     | silly_if_p(cfg)
@@ -52,6 +50,7 @@ class ExportTU:
     def dump(self, file):
         for function in self.functions:
             print(function, file=file)
+            print(self.functions[function].parameter_name)
             print(self.functions[function].cfg.pretty(), file=file)
 
 

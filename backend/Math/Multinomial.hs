@@ -5,6 +5,7 @@ import Math.Ring
 
 type OVar = String
 type OCoeff = Rational
+-- TODO: Maybe we need OCoeff to be `Rational + Float` to represent non-rational values as well
 
 instance Ring OCoeff where
   radd = (+)
