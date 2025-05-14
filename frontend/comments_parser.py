@@ -41,6 +41,14 @@ loop_variant_p = map_p(
     ),
 )
 
+approx_comment_p = map_p(
+    lambda x: Directive(x.cmd, [text_expr_p.match(x.args[0])]),
+    filter_p(
+        lambda directive: directive.cmd == "approx" and len(directive.args) == 1,
+        from_function_p(parse_directive),
+    ),
+)
+
 already_encountered_label_p = filter_p(
     lambda directive: directive.cmd == "already_encountered"
     and len(directive.args) == 0,
@@ -48,7 +56,7 @@ already_encountered_label_p = filter_p(
 )
 
 
-###### SillyExpr text parsing ######
+###### SExpr text parsing ######
 
 
 def skip_spaces(src: str) -> str:
@@ -82,12 +90,12 @@ def tokenize(src: str) -> List[str]:
 
 def parse_atom(tokens: List[str]) -> Tuple[Any, List[str]]:
     if tokens[0][0].isdigit():
-        return SillyConst(tokens[0]), tokens[1:]
+        return SConst(tokens[0]), tokens[1:]
     elif tokens[0][0].isalpha() or tokens[0][0] == "_":
-        return SillyVar(tokens[0]), tokens[1:]
+        return SVar(tokens[0]), tokens[1:]
     elif tokens[0] == "-":
         atom, rest = parse_atom(tokens[1:])
-        return SillyUnop("-", True, atom), rest
+        return SUnop("-", True, atom), rest
     elif tokens[0] == "(":
         atom, rest = parse_expr(tokens[1:])
         if rest[0] != ")":
@@ -109,7 +117,7 @@ def parse_expr(tokens: List[str], level=0) -> Tuple[Any, List[str]]:
                 f"Unexpected token {rest[0]} while parsing arithmetic expression"
             )
         next, rest = parse_expr(rest[1:], level + 1)
-        prev = SillyBinop(operator, prev, next)
+        prev = SBinop(operator, prev, next)
     return prev, rest
 
 

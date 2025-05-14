@@ -1,6 +1,9 @@
 from typing import Any, List
 from dataclasses import dataclass
 from fractions import Fraction
+import functools
+import operator
+import copy
 
 
 class FunctionDescriprtion:
@@ -29,11 +32,19 @@ def pretty_ratio(n: int, d: int = 1) -> str:
 
 @dataclass
 class NamedFunctionCall:
+    # function_name: str
     function_name: str
     args: List[Any]
+    function_desc: FunctionDescriprtion | None
+
+    def cata(self, algebra):
+        return algebra[NamedFunctionCall](self)
 
     def pretty(self) -> str:
-        arg = next(arg for arg in self.args if arg is not None)
+        if self.function_desc is None:
+            raise ValueError(f"Call to unknown function {self.function_name}")
+
+        arg = next(arg for arg in self.args if arg != 1)
         return f'(SCall "{self.function_name}" {arg.pretty()})'
 
     def fold_to_const(self) -> Fraction | None:
@@ -41,7 +52,7 @@ class NamedFunctionCall:
 
 
 @dataclass
-class SillyBinop:
+class SBinop:
     operator: str
     lhs: any
     rhs: any
@@ -71,9 +82,7 @@ class SillyBinop:
             case "*":
                 return f"(OProd {self.lhs.pretty()} {self.rhs.pretty()})"
             case "-":
-                return SillyBinop(
-                    "+", self.lhs, SillyUnop("-", True, self.rhs)
-                ).pretty()
+                return SBinop("+", self.lhs, SUnop("-", True, self.rhs)).pretty()
             case "/":
                 if (folded_rhs := self.rhs.fold_to_const()) is not None:
                     if folded_rhs == 0:
@@ -88,7 +97,7 @@ class SillyBinop:
 
 
 @dataclass
-class SillyUnop:
+class SUnop:
     operator: str
     prefix: bool  # Avoid boolean blindness
     operand: Any
@@ -115,7 +124,7 @@ class SillyUnop:
 
 
 @dataclass
-class SillyVar:
+class SVar:
     name: str
 
     def pretty(self) -> str:
@@ -129,7 +138,7 @@ class SillyVar:
 
 
 @dataclass
-class SillyConst:
+class SConst:
     value: str
 
     def as_int(self):
@@ -151,19 +160,24 @@ class SillyConst:
 
 
 @dataclass
-class SillyCounterFor:
+class SCounterFor:
     counter: str
     intital: Any
     final: Any
     counter_increase: Any
     body: Any
 
+    def cata(self, algebra):
+        copied = copy.copy(self)
+        copied.body = self.body.cata(algebra)
+        return algebra[SCounterFor](copied)
+
     def pretty(self) -> str:
         match self.counter_increase:
             case "++":
-                return f'(SCounterFor "{self.counter}" {self.intital.pretty()} {self.final.pretty()} {self.body.pretty()})'
+                return f'(SCounterFor "{self.counter}" {self.intital.pretty()} {self.final.pretty()} OIncrenmentCounter {self.body.pretty()})'
             case "--":
-                return f'(SCounterFor "{self.counter}" {self.final.pretty()} {self.intital.pretty()} {self.body.pretty()})'
+                return f'(SCounterFor "{self.counter}" {self.final.pretty()} {self.intital.pretty()} OIncrenmentCounter {self.body.pretty()})'
             case _:
                 raise ValueError(
                     "Found cycle for with unknwon counter mutation function"
@@ -171,10 +185,18 @@ class SillyCounterFor:
 
 
 @dataclass
-class SillyIf:
+class SIf:
     condition: Any
     then_branch: Any
     else_branch: Any | None
+
+    def cata(self, algebra):
+        copied = copy.copy(self)
+        copied.then_branch = self.then_branch.cata(algebra)
+        copied.else_branch = (
+            None if self.else_branch is None else self.else_branch.cata(algebra)
+        )
+        return algebra[SIf](copied)
 
     def pretty(self) -> str:
         left = self.then_branch.pretty()
@@ -184,18 +206,53 @@ class SillyIf:
 
 
 @dataclass
-class SillyExpr:
+class SExpr:
     def __init__(self):
         pass
+
+    def cata(self, algebra):
+        return algebra[SExpr](self)
 
     def pretty(self) -> str:
         return "SAtom"
 
 
 @dataclass
-class SillyBlock:
+class SSkip:
+    def __init__(self):
+        pass
+
+    def cata(self, algebra):
+        return algebra[SSkip](self)
+
+    def pretty(self) -> str:
+        return "SSkip"
+
+
+@dataclass
+class SBlock:
     children: List[Any]
+
+    def cata(self, algebra):
+        copied = SBlock([child.cata(algebra) for child in self.children])
+        return algebra[SBlock](copied)
 
     def pretty(self) -> str:
         children = [c.pretty() for c in self.children]
         return f"(SBlock [{', '.join(children)}])"
+
+
+def cfg_collect_calls(stmt):
+    return stmt.cata(
+        {
+            NamedFunctionCall: lambda fc: {fc.function_name},
+            SExpr: lambda sexpr: set(),
+            SSkip: lambda sskip: set(),
+            SBlock: lambda sblock: functools.reduce(
+                operator.or_, sblock.children, set()
+            ),
+            SCounterFor: lambda scf: scf.body,
+            SIf: lambda sif: sif.then_branch
+            | (set() if sif.else_branch is None else sif.else_branch),
+        }
+    )

@@ -11,15 +11,20 @@ class FrontendException(Exception):
         return self.desc
 
 
-
-
 DEFAULT_CFG_PATTERN = lambda tu: lambda func_desc: fix_p(
-    lambda cfg: map_p(lambda c: SillyBlock(c), block_of_p(cfg))
+    lambda cfg: map_p(lambda c: SBlock(c), block_of_p(cfg))
     | silly_if_p(cfg)
-    | expr_to_block_p(recursive_call_p(PatternContext(func_desc, tu)))
-    | map_p(lambda _: SillyExpr(), expr_p)
-    | map_p(lambda _: SillyExpr(), decl_p)
-    | map_p(lambda _: SillyExpr(), return_p)
+    | expr_to_block_p(
+        recursive_call_p(PatternContext(func_desc, tu))
+        | interunit_call_p(PatternContext(func_desc, tu))
+        | map_p(
+            lambda c: SExpr(), any_call_p
+        ),  # All extern call are considered as constants
+        expr_p | return_p | decl_p,
+    )
+    | map_p(lambda _: SExpr(), expr_p * no_calls_p)
+    | map_p(lambda _: SExpr(), decl_p * no_calls_p)
+    | map_p(lambda _: SExpr(), return_p * no_calls_p)
     | CounterForPattern(cfg)
     | hinted_loop_p(PatternContext(func_desc, tu))(cfg)
     | already_encountered_p(PatternContext(func_desc, tu))(cfg)
@@ -52,6 +57,7 @@ class ExportTU:
     def dump(self, file):
         for function in self.functions:
             print(function, file=file)
+            print(self.functions[function].parameter_name)
             print(self.functions[function].cfg.pretty(), file=file)
 
 
@@ -62,9 +68,12 @@ def working_set_collect(intitial: Set[Any], transform) -> Set[Any]:
 
     while len(working) != 0:
         elem = working.pop()
+        used.add(elem)
+
         processed, induced = transform(elem)
-        induced -= used
         result.add(processed)
+
+        induced -= used
         working |= induced
 
     return result
@@ -96,7 +105,7 @@ def collect_descriptions(
     def transform(function_name):
         function_desc = get_function_from_tu(tu, function_name)
         function = match_cfg(function_desc, cfg_pattern_fabric(tu))
-        return function, set()
+        return function, cfg_collect_calls(function.cfg)
 
     function_descriptions = working_set_collect({function_name}, transform)
 

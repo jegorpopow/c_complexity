@@ -5,6 +5,7 @@ import Math.Ring
 
 type OVar = String
 type OCoeff = Rational
+-- TODO: Maybe we need OCoeff to be `Rational + Float` to represent non-rational values as well
 
 instance Ring OCoeff where
   radd = (+)
@@ -27,5 +28,5 @@ extractCoef (MVar _ coeffs) i = coeffs !! i
 
 degVar :: OVar -> Multinomial -> Int
 degVar v (MCoeff _) = 0
-degVar v (MVar v' coefs) | v == v'   = length coefs
+degVar v (MVar v' coefs) | v == v'   = length coefs - 1
                          | otherwise = degVar v (head coefs) 

@@ -97,6 +97,30 @@ class ConditionPattern(Pattern):
         return None
 
 
+class AllPattern(Pattern):
+    def __init__(self, patterns):
+        self.patterns = patterns
+
+    def match(self, tree):
+        matches = [p.match(tree) for p in self.patterns]
+        if any(m is None for m in matches):
+            return None
+        else:
+            return matches
+
+
+class BindPattern(Pattern):
+    def __init__(self, base, kleisli):
+        self.base = base
+        self.kleisli = kleisli
+
+    def match(self, tree):
+        pat = map_p(self.kleisli, self.base).match(tree)
+        if pat is None:
+            return None
+        return pat.match(tree)
+
+
 class FixpointPattern(Pattern):
     """
     Python forbids constructions like `x = f(x)`, so we can't create recursive pattern explicitly
@@ -126,10 +150,12 @@ wildcard_p = WildcardPattern()
 filter_p = lambda pred, base: ConditionPattern(pred, base)
 satisfy_p = lambda pred: filter_p(pred, wildcard_p)
 from_function_p = lambda f: WrapperPattern(f)
+failed_p = satisfy_p(lambda _: False)
 map_p = lambda f, base: MappedPattern(f, base)
 fix_p = lambda pat_gen: FixpointPattern(pat_gen)
+bind_p = lambda b, k: BindPattern(b, k)
+all_p = lambda patterns: AllPattern(patterns)
 some_p = lambda traverse, base: SomeMatchesPattern(traverse, base)
-
 
 if __name__ == "__main__":
     pass

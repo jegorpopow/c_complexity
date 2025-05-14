@@ -38,7 +38,6 @@ def main(file_name, function_name, dump_cfg, dump_ast):
             raise FrontendException(
                 f"Can not deduce parameter name for function {function_name}"
             )
-        print(function.parameter_name)
         print(function.name)
         export_tu.dump(file=sys.stdout)
         if dump_cfg:

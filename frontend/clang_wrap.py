@@ -97,6 +97,19 @@ class TranslationUnit:
 
         return result
 
+    def find_inline_comment(self, tree):
+        for token in self.tokens:
+            if (
+                token.kind == clang.cindex.TokenKind.COMMENT
+                and token.spelling.startswith("/*")
+                and token.extent.start.line == tree.extent.start.line
+                and abs(token.extent.end.pos - tree.extent.start.pos) < 2
+            ):
+                # print(token_to_string(token))
+                return token.spelling[2:]
+
+        return None
+
 
 class BlockPattern(Pattern):
     def __init__(self, atom):
@@ -169,7 +182,7 @@ class BinopPattern(Pattern):
         )
         if lhs is None or rhs is None:
             return None
-        return SillyBinop(get_binop_spelling(tree), lhs, rhs)
+        return SBinop(get_binop_spelling(tree), lhs, rhs)
 
 
 class UnopPattern(Pattern):
@@ -186,17 +199,17 @@ class UnopPattern(Pattern):
         if val == None:
             return
 
-        return SillyUnop(operator, prefix, val)
+        return SUnop(operator, prefix, val)
 
 
 integer_literal_p = map_p(
-    lambda tree: SillyConst(next(tree.get_tokens()).spelling),
+    lambda tree: SConst(next(tree.get_tokens()).spelling),
     of_kind_p(clang.cindex.CursorKind.INTEGER_LITERAL),
 )
 
 expr_var_p = with_unexposed_p(
     map_p(
-        lambda tree: SillyVar(tree.spelling),
+        lambda tree: SVar(tree.spelling),
         of_kind_p(clang.cindex.CursorKind.DECL_REF_EXPR),
     )
 )
@@ -210,16 +223,21 @@ silly_expr_p = fix_p(
 
 
 class FunctionCallPattern(Pattern):
-    def __init__(self, args: List[Pattern], name: str | None = None):
+    def __init__(
+        self, args: List[Pattern] | None, func: FunctionDescriprtion | None = None
+    ):
         self.args_pattern = args
-        self.name = name
+        self.func = func
 
     def match(self, tree):
         if tree.kind != clang.cindex.CursorKind.CALL_EXPR:
             return None
 
-        if self.name is not None and tree.spelling != self.name:
+        if self.func is not None and tree.spelling != self.func.name:
             return None
+
+        if self.args_pattern is None:
+            return NamedFunctionCall(tree.spelling, None, self.func)
 
         args = list(tree.get_children())[1:]
         args = zip_match(patterns=self.args_pattern, targets=args)
@@ -227,21 +245,54 @@ class FunctionCallPattern(Pattern):
         if args is None:
             return None
 
-        return NamedFunctionCall(tree.spelling, args)
+        return NamedFunctionCall(tree.spelling, args, self.func)
+
+
+any_call_p = FunctionCallPattern(None, None)
 
 
 def function_one_argument_patterns(
     function: FunctionDescriprtion, pattern: Pattern
 ) -> List[Pattern]:
     return [
-        pattern if i == function.parameter_idx() else map_p(lambda _: None, wildcard_p)
+        pattern if i == function.parameter_idx() else map_p(lambda _: 1, wildcard_p)
         for i in range(len(function.args))
     ]
 
 
-recursive_call_p = lambda ctx: FunctionCallPattern(
-    function_one_argument_patterns(ctx.function, silly_expr_p), name=ctx.function.name
+def approx_expr_pattern(ctx):
+    def res(tree):
+        if (comment := ctx.tu.find_inline_comment(tree)) is not None:
+            if (m := approx_comment_p.match(comment)) is not None:
+                if m.args[0] is not None:
+                    return m.args[0]
+        return None
+
+    return res
+
+
+approx_expr_p = lambda ctx: from_function_p(approx_expr_pattern(ctx))
+
+function_desc_call_p = lambda ctx, desc: (
+    FunctionCallPattern(
+        function_one_argument_patterns(desc, approx_expr_p(ctx) | silly_expr_p),
+        func=desc,
+    )
+    if desc is not None
+    else failed_p
 )
+
+
+interunit_call_p = lambda ctx: bind_p(
+    any_call_p,
+    lambda named_call: function_desc_call_p(
+        ctx, ctx.tu.get_function(named_call.function_name)
+    ),
+)  # call to any function from current TU
+
+recursive_call_p = lambda ctx: function_desc_call_p(
+    ctx, ctx.function
+)  # call to current function
 
 
 class IfPattern(Pattern):
@@ -264,7 +315,7 @@ class IfPattern(Pattern):
             else_branch = self.else_branch.match(children[2])
         else:
             else_branch = None
-        return SillyIf(cond, then_branch, else_branch)
+        return SIf(cond, then_branch, else_branch)
 
 
 silly_if_p = lambda branch: IfPattern(wildcard_p, branch, branch, else_obligatory=False)
@@ -284,9 +335,9 @@ class CounterForPattern(Pattern):
         value_initialization_p = filter_p(
             lambda expr: not expr.rhs is None,
             map_p(
-                lambda decl: SillyBinop(
+                lambda decl: SBinop(
                     "=",
-                    SillyVar(decl.spelling),
+                    SVar(decl.spelling),
                     silly_expr_p.match(next(decl.get_children())),
                 ),
                 of_kind_p(clang.cindex.CursorKind.VAR_DECL),
@@ -301,15 +352,15 @@ class CounterForPattern(Pattern):
         )
         pre, condition, iter, body = [i for i in tree.get_children()]
 
-        condition: SillyBinop = silly_expr_p.match(condition)
+        condition: SBinop = silly_expr_p.match(condition)
         if condition is None:
             return None
 
-        init: SillyBinop = (assignment_p | value_initialization_p).match(pre)
+        init: SBinop = (assignment_p | value_initialization_p).match(pre)
         if init is None:
             return None
 
-        mut: SillyUnop = mutation_p.match(iter)
+        mut: SUnop = mutation_p.match(iter)
         if mut == None:
             return None
 
@@ -322,14 +373,14 @@ class CounterForPattern(Pattern):
         if condition.operator in ["<", "<="] and mut.operator in ["++", "+="]:
             counter_lower_bound = init.rhs
             counter_upper_bound = condition.rhs
-            return SillyCounterFor(
+            return SCounterFor(
                 counter_name, counter_lower_bound, counter_upper_bound, "++", body
             )
 
         if condition.operator in [">", ">="] and mut.operator in ["--", "-="]:
             counter_lower_bound = condition.rhs
             counter_upper_bound = init.rhs
-            return SillyCounterFor(
+            return SCounterFor(
                 counter_name, counter_lower_bound, counter_upper_bound, "--", body
             )
 
@@ -378,7 +429,7 @@ class HintedLoopPattern(Pattern):
             return None
 
         counter, initial, final, step = parsed
-        return SillyCounterFor(
+        return SCounterFor(
             counter, initial, final, "++" if int(step) > 0 else "--", body
         )
 
@@ -414,7 +465,7 @@ class AlreadyEncounteredLoopPattern(Pattern):
         body = self.body_pattern.match(body)
         if body is None:
             return None
-        return SillyExpr()
+        return SExpr()
 
 
 hinted_loop_p = lambda ctx: lambda body: HintedLoopPattern(ctx, body)
@@ -422,9 +473,12 @@ already_encountered_p = lambda ctx: lambda body: AlreadyEncounteredLoopPattern(
     ctx, body
 )
 
-expr_to_block_p = lambda p: map_p(
-    lambda elements: SillyBlock(elements), some_p(traverse_apply, p)
-) * (expr_p | decl_p | return_p)
+expr_to_block_p = (
+    lambda p, expr_source: map_p(
+        lambda elements: SBlock(elements), some_p(traverse_apply, p)
+    )
+    * expr_source
+)
 
 
 def traverse_apply(pattern: Pattern, action, root):
@@ -457,6 +511,8 @@ not_contains_p = lambda pattern: satisfy_p(
     lambda root: not contains_match(pattern, root)
 )
 
+no_calls_p = not_contains_p(any_call_p)
+
 
 def extent_to_string(extent) -> str:
     return f"{extent.start.line}:{extent.start.column} - {extent.end.line}:{extent.end.column}"
@@ -487,12 +543,12 @@ def dump_tokens(tokens):
 
 
 silly_ast_pattern = lambda ctx: fix_p(
-    lambda silly_ast: map_p(lambda c: SillyBlock(c), block_of_p(silly_ast))
+    lambda silly_ast: map_p(lambda c: SBlock(c), block_of_p(silly_ast))
     | silly_if_p(silly_ast)
-    | expr_to_block_p(recursive_call_p(ctx))
-    | map_p(lambda _: SillyExpr(), expr_p)
-    | map_p(lambda _: SillyExpr(), decl_p)
-    | map_p(lambda _: SillyExpr(), return_p)
+    | expr_to_block_p(recursive_call_p(ctx), expr_p | decl_p | return_p)
+    | map_p(lambda _: SExpr(), expr_p * no_calls_p)
+    | map_p(lambda _: SExpr(), decl_p * no_calls_p)
+    | map_p(lambda _: SExpr(), return_p * no_calls_p)
     | CounterForPattern(silly_ast)
     | hinted_loop_p(ctx)(silly_ast)
     | already_encountered_p(ctx)(silly_ast)

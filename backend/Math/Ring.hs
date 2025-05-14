@@ -31,6 +31,12 @@ rsumMany :: Ring d => [d] -> d
 rsumMany [] = rzero
 rsumMany arr = foldr1 radd arr
 
-symbolicPower :: Ring d => Int -> d -> d
-symbolicPower 0 _ = rone
-symbolicPower n expr = foldr1 rmul $ replicate n expr
+ringPower :: Ring d => Int -> d -> d
+ringPower 0 _ = rone
+ringPower n expr = foldr1 rmul $ replicate n expr
+
+substPoly :: Ring d => [d] -> d -> d
+substPoly coefs val = foldr1 radd ((\ (i, v) -> v `rmul` ringPower i val) <$> enumerate coefs)
+  where
+    enumerate :: [a] -> [(Int, a)]
+    enumerate lst = let n = length lst - 1 in zip [0..n] lst

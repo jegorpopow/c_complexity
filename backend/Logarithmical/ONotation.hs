@@ -1,210 +1,189 @@
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Logarithmical.ONotation where
 
-import Data.Ratio ( (%), denominator, numerator )
-import qualified Data.Set as Set
-import Math.Faulhaber (faulhabersCoefs)
-import Data.List (nub, null)
+import Data.List (isPrefixOf, nub, null)
+import Data.Map qualified as Map
+import Data.Maybe (fromMaybe, Maybe (Just, Nothing))
+import Data.Ratio (denominator, numerator, (%))
+import Data.Set qualified as Set
 import Debug.Trace (trace)
-import Math.Ring
+import Distribution.Compat.Prelude (undefined)
+import Logarithmical.OExpr
+import Math.Faulhaber (faulhabersCoefs)
 import Math.Multinomial
+import Math.Ring
 
-
-data OExpr = OVar OVar
-  | OCoeff OCoeff
-  | OSum OExpr OExpr
-  | OProd OExpr OExpr
-  | OCounter OVar OExpr OExpr OExpr
-  | ORecursive OExpr
-   deriving (Eq, Show, Read)
-
-substExpr :: OVar -> OExpr -> OExpr -> OExpr
-substExpr name v v'@(OVar name') | name == name' = v
-                                 | otherwise = v'
-substExpr _ v v'@(OCoeff _) = v'
-substExpr n v (OSum l r) = OSum (substExpr n v l) (substExpr n v r)
-substExpr n v (OProd l r) = OProd (substExpr n v l) (substExpr n v r)
-substExpr n v (OCounter c f t e) = OCounter c (substExpr n v f) (substExpr n v t) (substExpr n v e)
-substExpr n v (ORecursive e) = ORecursive $ substExpr n v e
-
-substRecursive :: OExpr -> OExpr -> OExpr
-substRecursive v v'@(OVar name') = v'
-substRecursive v v'@(OCoeff _) = v'
-substRecursive v (OSum l r) = OSum (substRecursive v l) (substRecursive v r)
-substRecursive v (OProd l r) = OProd (substRecursive v l) (substRecursive v r)
-substRecursive v (OCounter c f t e) = OCounter c f t (substRecursive v e)
-substRecursive v (ORecursive e) = v
-
-constFolding :: OExpr -> OExpr
-constFolding v@(OVar _) = v
-constFolding c@(OCoeff _) = c
-constFolding (OSum lhs rhs) = case (constFolding lhs, constFolding rhs) of
-  (OCoeff l, OCoeff r) -> OCoeff $ l + r
-  (OCoeff 0, r)          -> r
-  (l, OCoeff 0)          -> l
-  (l, r)                   -> OSum l r
-constFolding (OProd lhs rhs) = case (constFolding lhs, constFolding rhs) of
-  (OCoeff l, OCoeff r) -> OCoeff $ l * r
-  (OCoeff 1, r)          -> r
-  (l, OCoeff 1)          -> l
-  (l, r)                   -> OProd l r
-constFolding (OCounter c f t e) = OCounter c (constFolding f) (constFolding t) (constFolding e)
-constFolding (ORecursive e) = ORecursive $ constFolding e
-
-prettyExpr :: OExpr -> String
-prettyExpr (OCoeff n) = if denominator n /= 1 then
-    show $ fromIntegral (numerator n) / fromIntegral (denominator n)
-  else
-    show $ numerator n
-prettyExpr (OVar var) = var
-prettyExpr (OSum lhs rhs) = "(" ++ prettyExpr lhs ++ " + " ++ prettyExpr rhs ++ ")"
-prettyExpr (OProd lhs rhs) = "(" ++ prettyExpr lhs ++ " * " ++ prettyExpr rhs ++ ")"
-prettyExpr (OCounter c f t e) = "(sum from " ++ c ++ " = " ++ prettyExpr f ++ " to " ++ prettyExpr t ++ " of " ++ prettyExpr e ++ ")"
-prettyExpr (ORecursive e) = "f(" ++ prettyExpr e ++ ")"
-
-recursiveCalls :: OVar -> OExpr -> [Multinomial]
-recursiveCalls _ (OCoeff _) = []
-recursiveCalls _ (OVar name) = []
-recursiveCalls v (OProd lhs rhs) = recursiveCalls v lhs ++ recursiveCalls v rhs
-recursiveCalls v (OSum lhs rhs) = recursiveCalls v lhs ++ recursiveCalls v rhs
-recursiveCalls v (OCounter counter from to expr) = recursiveCalls v expr
-recursiveCalls v (ORecursive expr) = [oNormalForm v expr]
-
-freeVars :: OExpr -> Set.Set OVar
-freeVars (OCoeff _) = Set.empty
-freeVars (OVar name) = Set.singleton name
-freeVars (OProd lhs rhs) = freeVars lhs `Set.union` freeVars rhs
-freeVars (OSum lhs rhs) = freeVars lhs `Set.union` freeVars rhs
-freeVars (OCounter counter from to expr) = counter `Set.delete` (freeVars expr `Set.union` freeVars from `Set.union` freeVars to)
-freeVars (ORecursive expr) = freeVars expr
-
-instance Ring OExpr where
-  -- Smart constructors for OSum
-  radd (OCoeff 0) x = x
-  radd x (OCoeff 0) = x
-  radd (OCoeff x) (OCoeff y) = OCoeff $ x + y
-  radd x y = OSum x y
-  -- Smart constructors for OProd
-  rmul (OCoeff 1) x = x
-  rmul x (OCoeff 1) = x
-  rmul (OCoeff x) (OCoeff y) = OCoeff $ x * y
-  rmul x y = OProd x y
-  rneg = (OCoeff (-1) `OProd`)
-  rzero = OCoeff 0
-  rone = OCoeff 1
-
-substPoly :: Ring d => [d] -> d -> d
-substPoly coefs val = foldr1 radd ((\ (i, v) -> v `rmul` symbolicPower i val) <$> enumerate coefs)
-  where
-    enumerate :: [a] -> [(Int, a)]
-    enumerate lst = let n = length lst - 1 in zip [0..n] lst
-
--- receives a name of variable `n`, represents given expression 
--- as `A * n^0 + B * n^1 + C * n ^ 2 + ...`, where A, B, C a expressions, which depends on 
--- free variables of given expression only
-oSemiNormalForm :: OVar -> OExpr -> [OExpr]
-oSemiNormalForm _ v@(OCoeff _) = [v]
-oSemiNormalForm var v@(OVar var') = if var' == var then [OCoeff 0, OCoeff 1] else [v]
-oSemiNormalForm var (OProd lhs rhs) = prodPoly (oSemiNormalForm var lhs) (oSemiNormalForm var rhs)
-oSemiNormalForm var (OSum lhs rhs) = addPoly (oSemiNormalForm var lhs) (oSemiNormalForm var rhs)
-oSemiNormalForm var v@(ORecursive _) = [v]
-oSemiNormalForm var (OCounter counter from to expr) = let normalizedExpr = oSemiNormalForm counter expr in
-  let n = length normalizedExpr - 1 in
-    oSemiNormalForm var $ rsumMany [bJ `rmul` (substPoly pJ to `rsub` substPoly pJ from) |
-      j <- [0..n],
-      let pJ = fmap OCoeff $ faulhabersCoefs !! j,
-      let bJ = normalizedExpr !! j]
-
-data SCFG  =
-    SAtom                                  -- O(1) operations, such as arithmetics 
-  | SSkip                                  -- noop
-  | SCall OVar OExpr                       -- call to another function f with known parameter  
-  | SHardcoded OExpr                       -- hardcoded element with known complexity (used for some variants)
-  | SIf SCFG SCFG                          -- if (A) {then} {else} 
-  | SCounterFor OVar OExpr OExpr SCFG      -- for (i = A; i < B; i++) { body }
-  | SBlock [SCFG]                          -- basic block of CFG 
+data SCFG
+  = SAtom -- O(1) operations, such as arithmetics
+  | SSkip -- noop
+  | SCall OVar OExpr -- call to another function f with known parameter
+  | SHardcoded OExpr -- hardcoded element with known complexity (used for some variants)
+  | SIf SCFG SCFG -- if (A) {then} {else}
+  | SCounterFor OVar OExpr OExpr OCounterVariant SCFG -- for (i = A; i < B; i++) { body }
+  | SBlock [SCFG] -- basic block of CFG
   deriving (Eq, Show, Read)
 
+type CFGContext = Map.Map OVar (OVar, SCFG)
 
-oNormalForm :: OVar -> OExpr -> Multinomial
-oNormalForm name expr = oNormalFormImpl exprVars expr' where
-  expr' = constFolding expr
-  exprVars :: [OVar]
-  exprVars = name : Set.elems (Set.delete name (freeVars expr'))
-  oNormalFormImpl :: [OVar] -> OExpr -> Multinomial
-  oNormalFormImpl  [] (OCoeff v) = MCoeff v
-  oNormalFormImpl  [] _ = undefined -- TODO: throw/catch  
-  oNormalFormImpl (var:vars) expr = MVar var $ fmap (oNormalFormImpl vars . constFolding) (oSemiNormalForm var expr)
+singletonCfgCtx :: OVar -> OVar -> SCFG -> CFGContext
+singletonCfgCtx fname aname body = Map.singleton fname (aname, body)
 
-multinomialExpr :: Multinomial -> OExpr
-multinomialExpr (MCoeff coef) = OCoeff coef
-multinomialExpr (MVar var coefs) = substPoly (fmap multinomialExpr coefs) (OVar var)
-
-printAsymptotics :: OVar -> Multinomial ->  String
-printAsymptotics name (MVar _ coefs) = let n = length coefs -1 in
-  case  multinomialExpr $ coefs !! n of
-    (OCoeff _) ->  "O(" ++ name ++" ^ " ++ show n ++ ")"
-    v          ->  "O(" ++ prettyExpr v ++ " * " ++ name ++" ^ " ++ show n ++ ")"
-
--- Receives the program CFG, reduces it to receivce a complex expression, which describes a number of operations it performs  
+-- Receives the program CFG, reduces it to receivce a complex expression, which describes a number of operations it performs
 calculateAsymptotics :: OVar -> SCFG -> OExpr
 calculateAsymptotics _ SAtom = OCoeff 1
 calculateAsymptotics _ SSkip = OCoeff 0
-calculateAsymptotics name (SCall name' arg) | name == name' = ORecursive arg
-                                            | otherwise     = undefined
+calculateAsymptotics _ (SCall name arg) = OCall name arg
 calculateAsymptotics _ (SHardcoded expr) = expr
-calculateAsymptotics n (SIf t e) = OSum (calculateAsymptotics n t) (calculateAsymptotics n e) -- This is pretty correct, but there are more accurate estimations 
-calculateAsymptotics n (SCounterFor counter from to body) = OCounter counter from to $ calculateAsymptotics n body
+calculateAsymptotics n (SIf t e) = OSum (calculateAsymptotics n t) (calculateAsymptotics n e) -- This is pretty correct, but there are more accurate estimations
+calculateAsymptotics n (SCounterFor counter from to i body) = OCounter counter from to i $ calculateAsymptotics n body
 calculateAsymptotics n (SBlock exprs) = rsumMany $ fmap (calculateAsymptotics n) exprs
 
-masterTheorem :: OVar -> Multinomial -> Multinomial -> String
-masterTheorem n arg body = case multinomialExpr (extractCoef arg 1) of 
-  (OCoeff inv_b) -> let b = 1 / inv_b in 
-    case multinomialExpr(extractCoef body 1) of 
-      (OCoeff a) -> let f = oNormalForm n (multinomialExpr (extractCoef body 1)) in 
-        let c = degVar n f in
-          let b_pow_c = symbolicPower c b in 
-            case compare a b_pow_c of 
-              GT -> "O(" ++ n ++ " ^ (log_{" ++ show b ++ "}(" ++ show a ++ ")))"
-              LT -> "O(" ++ n ++ " ^ (" ++ show c ++ "))"
-              EQ -> "O(" ++ n ++ " ^ (" ++ show c ++ ") * log(" ++ n ++ "))" 
-      _          -> "Unsupported recurence" 
-  _          -> "Unsupported recurence"
+getFunctionContext :: CFGContext -> FunctionContext
+getFunctionContext = Map.mapWithKey (\k (a, b) -> (a, calculateAsymptotics k b))
 
+masterTheorem :: OVar -> OVar -> OExpr -> Maybe String
+masterTheorem n fname body =
+  let (dryed, bm) = extractCalls body
+   in if not $ isMultinomial dryed
+        then
+          Nothing
+        else case commonArgument n bm of
+          Just arg ->
+            let body = exprToMultinomial unifiedCallStr $ unifyCalls dryed
+             in case multinomialToExpr (extractCoef arg 1) of
+                  (OCoeff inv_b) ->
+                    let b = 1 / inv_b
+                     in ( case multinomialToExpr (extractCoef body 1) of
+                            (OCoeff a) ->
+                              ( let f = exprToMultinomial n (multinomialToExpr (extractCoef body 0))
+                                 in let c = degVar n f
+                                     in ( let b_pow_c = ringPower c b
+                                           in ( Just $
+                                                  case compare a b_pow_c of
+                                                    GT -> n ++ " ^ log_{" ++ prettyRational b ++ "}" ++ prettyRational a
+                                                    LT -> printDegree n c
+                                                    EQ -> printDegree n c ++ " * " ++ prettyExpr (OLog (OVar n))
+                                              )
+                                        )
+                              )
+                            _ -> Nothing
+                        )
+                  _ -> Nothing
+          Nothing -> Nothing
+  where
+    unifiedCallStr = "%%UNFIED_CALL"
 
-resolveEquation :: OVar -> OExpr -> String
-resolveEquation v e | null rc                 = printAsymptotics v (oNormalForm v e)
-                    | length (nub rc) > 1     = undefined                -- TODO
-                    | otherwise = let reccall = head rc in 
-                      let multinomial = oNormalForm "%REC%" (substRecursive (OVar "%REC%") e) in 
-                        masterTheorem v reccall multinomial
-  where 
-    traced :: Show a => a -> a
-    traced x = trace (show x) x
-    rc = recursiveCalls v e
+    commonArgument :: OVar -> Bimap OVar OExpr -> Maybe Multinomial
+    commonArgument n (l, r)
+      | length (nub multinmialArgs) == 1 = Just $ head multinmialArgs
+      | otherwise = Nothing
+      where
+        multinmialArgs = (\(OCall _ e) -> exprToMultinomial n e) <$> Map.keys r
 
+    isCallingVar :: OExpr -> Bool
+    isCallingVar (OVar name) = "%%CALL_" `isPrefixOf` name
+    isCallingVar _ = False
 
+    unifyCalls = substExpr isCallingVar (const $ OVar unifiedCallStr)
 
+tailRecursion :: FunctionContext -> OVar -> OVar -> OExpr -> Maybe String
+tailRecursion ctx n fname body =
+  let (dryed, bm) = extractCalls body
+   in case isTailRecursive dryed bm of
+        Just (i, e) ->
+          Just $ resolveEquation
+            (Map.insert fname (n, OCounter "%%fresh" (OCoeff 0) (OVar n) i (substVar e n "%%fresh")) ctx)
+            fname
+        _  -> Nothing
+  where
+    substVar :: OExpr -> OVar -> OVar -> OExpr
+    substVar s n n' =
+      substExpr
+        ( \case
+            e@(OVar n'') -> n == n''
+            _ -> False
+        )
+        (const (OVar n'))
+        s
 
+    isTailRecursive :: OExpr -> Bimap OVar OExpr -> Maybe (OCounterVariant, OExpr)
+    isTailRecursive e (l, r) =
+      if Map.size r /= 1
+        then Nothing
+        else
+          let m = exprToMultinomial n arg
+           in if (degVar n m /= 1) || multinomialToExpr (extractCoef m 1) /= OCoeff 1
+                then
+                  Nothing
+                else
+                  Just (OIncrenmentCounter, multinomialToExpr (extractCoef m 0))
+      where
+        (OCall _ arg) = head $ Map.keys r
+        callVar = head $ (Map.!) r (head $ Map.keys r)
 
+prettyRational :: OCoeff -> String
+prettyRational = prettyExpr . OCoeff
+
+printDegree :: OVar -> Int -> String
+printDegree var n
+  | n == 0 = "1"
+  | n == 1 = var
+  | otherwise = var ++ "^" ++ show n
+
+resolveEquation :: FunctionContext -> OVar -> String
+resolveEquation rawCtx name
+  | isNonCalling ctx name && isMultinomial body =
+      let (coef, degree) = getGreaterDegree (exprToMultinomial argName body)
+       in case coef of
+            (OCoeff _) -> printDegree argName degree
+            _ -> prettyExpr coef ++ " * " ++ printDegree argName degree
+  | isNonCalling ctx name && not (isMultinomial body) = "<unknown>"
+  | isSimpleRecursive ctx name = case masterTheorem argName name body of
+      (Just x) -> x
+      _ -> fromMaybe "<unknown>" $ tailRecursion ctx argName name body
+  | isMutualrecursive ctx name = "<unknown>"
+  | otherwise = "<unknown>"
+  where
+    ctx = inlineInContext name rawCtx
+    (argName, body) = lookupCtx ctx name
+    getGreaterDegree :: Multinomial -> (OExpr, Int)
+    getGreaterDegree (MCoeff c) = (OCoeff c, 0)
+    getGreaterDegree (MVar _ coeffs) =
+      let n = length coeffs - 1
+       in (multinomialToExpr $ coeffs !! n, n)
 
 ------------- EXAMPLES ----------------
 
 exBubbleSort :: SCFG
-exBubbleSort = SBlock [
-  SAtom, -- initialization 
-  SCounterFor "i" (OCoeff 0) (OVar "n") ( -- for (int i = 0; i < n; i++)
-    SCounterFor "j" (OCoeff 1) ((OVar "n" `rsub` OVar "i") `rsub` OCoeff 1) ( -- for (int j = 1; j < n - i - 1; j++)
-      SIf SAtom SSkip -- if (a[j - 1] > a[j]) swap(a + i, a + j); 
-    )
-  ),
-  SAtom] -- return 
+exBubbleSort =
+  SBlock
+    [ SAtom, -- initialization
+      SCounterFor
+        "i"
+        (OCoeff 0)
+        (OVar "n")
+        OIncrenmentCounter
+        ( -- for (int i = 0; i < n; i++)
+          SCounterFor
+            "j"
+            (OCoeff 1)
+            ((OVar "n" `rsub` OVar "i") `rsub` OCoeff 1)
+            OIncrenmentCounter
+            ( -- for (int j = 1; j < n - i - 1; j++)
+              SIf SAtom SSkip -- if (a[j - 1] > a[j]) swap(a + i, a + j);
+            )
+        ),
+      SAtom -- return
+    ]
 
 exDivideAndRule :: SCFG
-exDivideAndRule = SBlock [
-  SAtom,
-  SCounterFor "i" (OCoeff (0 % 1)) (OVar "n") (SBlock [SAtom]),
-  SCall "divide_and_rule" (OProd (OCoeff (1 % 2)) (OVar "n")),
-  SCall "divide_and_rule" (OProd (OCoeff (1 % 2)) (OVar "n")), 
-  SAtom]
+exDivideAndRule =
+  SBlock
+    [ SAtom,
+      SCounterFor "i" (OCoeff (0 % 1)) (OVar "n") OIncrenmentCounter (SBlock [SAtom]),
+      SCall "divide_and_rule" (OProd (OCoeff (1 % 2)) (OVar "n")),
+      SCall "divide_and_rule" (OProd (OCoeff (1 % 2)) (OVar "n")),
+      SAtom
+    ]

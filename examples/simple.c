@@ -57,6 +57,43 @@ int cube(int n) {
     return res;
 }
 
+int constant(int n) {
+    return 0;
+}
+
+int lin(int n) {
+    int res = 0;
+    for (int i = n * n * n - n; i < n * n * n; i++) {
+        res++;
+    }
+    return res;
+}
+
+// initially n == 2 ^ k 
+int binary_search(int* arr, int n, int elem) {
+    if (n < 2) {
+        return arr[n] == elem;
+    } else {
+        return binary_search(arr[n] < elem ? arr + n / 2 : arr, n / 2, elem);
+    }
+}
+
+/* @param(n) */
+int callee(int n) {
+    int res = 0; 
+
+    for (int i = 0; i < n; i++) {
+        res++;
+    }
+
+    return res;
+}
+
+/* @param(n) */
+int caller(int n) {
+    return callee(n);
+}
+
 int sqr(int n) {
     int res = 0;
     for (int i = 0; i < n; i++) {
@@ -106,6 +143,38 @@ int divide_and_rule(int n) {
 
     return res;
 }
+
+int strange_rec(int n) {
+    int res = strange_rec(n / 2);
+
+    for (int i = 0; i < n * n; i++) {
+        res++;
+    }
+
+    res += strange_rec(n / 2) + strange_rec(n / 2);
+
+    return res;
+}
+
+int a_la_karatzuba(int n) {
+    int res = 0; 
+    for (int i = 0; i < n; i++) {
+        res++;
+    }
+
+    for (int i = 0; i < n; i++) {
+        res++;
+    }
+
+    for (int i = 0; i < 2 * n; i++) {
+        res++;
+    }
+
+    res += a_la_karatzuba(n / 2) + a_la_karatzuba(n / 2);
+
+    return res + a_la_karatzuba(n / 2);
+}
+
 
 int just_divide(int n) {
     int res = 0;

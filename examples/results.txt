@@ -1,28 +1,32 @@
-Analyzing function 'linear_search' from file 'examples/simple.c'
-O(n ^ 1)
-
 Analyzing function 'bubble_sort' from file 'examples/simple.c'
-O(n ^ 2)
+O(n^2)
 
-Analyzing function 'selection_sort' from file 'examples/simple.c'
-O(n ^ 2)
+Analyzing function 'lin' from file 'examples/simple.c'
+O(n)
 
 Analyzing function 'cube' from file 'examples/simple.c'
-O(n ^ 3)
-
-Analyzing function 'sqr' from file 'examples/simple.c'
-O(n ^ 2)
-
-Analyzing function 'matmul' from file 'examples/simple.c'
-O(((1 + m) * l) * n ^ 1)
-
-Analyzing function 'divide_and_rule' from file 'examples/simple.c'
-O(n ^ (1) * log(n))
-
-Analyzing function 'just_divide' from file 'examples/simple.c'
-O(n ^ (1))
+O(n^3)
 
 Analyzing function 'partition' from file 'examples/simple.c'
-O(n ^ 1)
+O(n)
+
+Analyzing function 'divide_and_rule' from file 'examples/simple.c'
+O(n * log(n))
+
+Analyzing function 'just_divide' from file 'examples/simple.c'
+O(n)
+
 Analyzing function 'matmul' from file 'examples/simple.c'
-O((n * l) * m ^ 1)
+O((n * l) * m)
+
+Analyzing function 'sqr' from file 'examples/simple.c'
+O(n^2)
+
+Analyzing function 'constant' from file 'examples/simple.c'
+O(1)
+
+Analyzing function 'a_la_karatzuba' from file 'examples/simple.c'
+O(n ^ log_{2}3)
+
+Analyzing function 'strange_rec' from file 'examples/simple.c'
+O(n^2)
